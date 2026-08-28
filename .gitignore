@@ -1,5 +1,7 @@
 .task
 bin
+# go build . default output (module name)
+/changeme.exe
 frontend/dist
 frontend/node_modules
 build/linux/appimage/build
