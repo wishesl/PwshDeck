@@ -1,0 +1,40 @@
+/* xterm.js host. The ConPTY provides a real interactive shell; xterm.js
+   renders its raw ANSI stream. The surface is translucent so the desktop
+   shows through the window. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+  /* Terminal text stays selectable; nothing drags the window. */
+  -webkit-user-select: text;
+  user-select: text;
+  --wails-draggable: no-drag;
+}
+
+#root {
+  height: 100%;
+}
+
+.terminal {
+  height: 100vh;
+  width: 100vw;
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.82) 0%, rgba(8, 10, 16, 0.66) 100%);
+  --wails-draggable: no-drag;
+}
+
+.terminal-xterm {
+  height: 100%;
+  width: 100%;
+}
+
+/* Let the translucent terminal background show through the xterm canvas. */
+.terminal-xterm .xterm {
+  height: 100%;
+}
+
+.terminal-xterm .xterm-viewport {
+  background-color: transparent !important;
+}
