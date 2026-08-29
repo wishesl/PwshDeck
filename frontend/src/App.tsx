@@ -223,7 +223,6 @@ export default function App() {
             ＋
           </button>
         </div>
-        <div className="topbar-spacer" />
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>

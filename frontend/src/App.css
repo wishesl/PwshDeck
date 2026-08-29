@@ -126,6 +126,10 @@
   font-size: 12.5px;
   border: 1px solid transparent;
   position: relative;
+  /* Let tabs shrink to fit the strip without a horizontal scrollbar;
+     long titles ellipsize via .tab-title. */
+  min-width: 0;
+  max-width: 170px;
   --wails-draggable: no-drag;
   transition:
     background 0.15s ease,
@@ -164,9 +168,12 @@
 }
 
 .tab-title {
-  max-width: 140px;
+  /* Flexes within the capped tab width and ellipsizes when space runs out. */
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab-close {
@@ -298,7 +305,8 @@
 }
 
 .topbar-spacer {
-  flex: 1;
+  /* kept for layout balance; .tab-bar (flex:1) already pushes right items */
+  flex: 0 0 8px;
 }
 
 .mcp-btn {
