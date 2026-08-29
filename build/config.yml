@@ -5,11 +5,11 @@ version: '3'
 
 # This information is used to generate the build assets.
 info:
-  companyName: "pwsh-mcp" # The name of the company
-  productName: "pwsh-mcp" # The name of the application
-  productIdentifier: "com.pwsh-mcp.app" # The unique product identifier
+  companyName: "PwshDeck" # The name of the company
+  productName: "PwshDeck" # The name of the application
+  productIdentifier: "com.pwshdeck.app" # The unique product identifier
   description: "Interactive pwsh terminal with MCP remote control" # The application description
-  copyright: "(c) 2026, pwsh-mcp" # Copyright text
+  copyright: "(c) 2026, PwshDeck" # Copyright text
   comments: "PowerShell terminal + MCP remote control" # Comments
   version: "0.1.0" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)

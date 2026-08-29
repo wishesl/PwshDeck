@@ -4,19 +4,19 @@
 
 ## 项目概览
 
-**pwsh-mcp** 是一个 Wails v3 桌面应用：Go 后端 + React/TypeScript 前端（xterm.js），底层用 Windows ConPTY 跑真正的交互式 `pwsh`，并内置 MCP 服务让 AI 客户端远程创建/操控 pwsh 会话。
+**PwshDeck** 是一个 Wails v3 桌面应用：Go 后端 + React/TypeScript 前端（xterm.js），底层用 Windows ConPTY 跑真正的交互式 `pwsh`，并内置 MCP 服务让 AI 客户端远程创建/操控 pwsh 会话。
 
 两种运行模式（`main.go`）：
 
 - **GUI 模式**：单实例、多标签、多窗口，可选随 GUI 启动 streamable-HTTP MCP。
-- **stdio 模式**：`pwsh-mcp.exe --mcp`，无头，供经典 `command` 型 MCP 客户端配置。
+- **stdio 模式**：`PwshDeck.exe --mcp`，无头，供经典 `command` 型 MCP 客户端配置。
 
 ## 目录结构与职责
 
 ```
 main.go                    # 入口：GUI / --mcp stdio 两种模式
 internal/
-  config/                  # config.json 加载与持久化（%APPDATA%\pwsh-mcp\config.json）
+  config/                  # config.json 加载与持久化（%APPDATA%\PwshDeck\config.json）
   session/                 # TerminalSession（ConPTY）+ SessionManager（会话管理/命令执行）
   mcp/                     # MCPService（HTTP 生命周期）+ BuildServer（工具注册）+ 输出清理
   window/                  # WindowManager（多窗口、标签布局持久化）
@@ -31,11 +31,11 @@ build/                     # Wails3 各平台 Taskfile 脚手架（含 ios/andro
 ## 常用命令
 
 ```bash
-# 完整生产构建（前端 + Go + 打包，输出 bin/pwsh-mcp.exe）
+# 完整生产构建（前端 + Go + 打包，输出 bin/PwshDeck.exe）
 wails3 build
 
 # 只编译 Go 后端（等价于 wails3 build 里的 native 步骤）
-go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o bin\pwsh-mcp.exe .
+go build -tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui" -o bin\PwshDeck.exe .
 
 # 前端构建（改 frontend/src 后必须重新跑，产物会被 go:embed 打进二进制）
 cd frontend && npm run build
@@ -51,7 +51,7 @@ go vet ./internal/...
 wails3 dev
 
 # 无头 stdio MCP
-bin\pwsh-mcp.exe --mcp
+bin\PwshDeck.exe --mcp
 ```
 
 冒烟脚本在 `.task/`（已 gitignore）：`smoke-sync.ps1`（同步读取，可用）、`smoke-test.ps1`（异步事件读取，某些环境读不到输出，弃用）。

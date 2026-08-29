@@ -10,10 +10,10 @@ import (
 	mcpapi "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"pwsh-mcp/internal/config"
-	"pwsh-mcp/internal/mcp"
-	"pwsh-mcp/internal/session"
-	"pwsh-mcp/internal/window"
+	"pwshdeck/internal/config"
+	"pwshdeck/internal/mcp"
+	"pwshdeck/internal/session"
+	"pwshdeck/internal/window"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -74,7 +74,7 @@ func runGUI() {
 	// 'Assets' configures the asset server with the 'FS' variable pointing to
 	// the frontend files. 'Services' are exposed to the frontend bindings.
 	app := application.New(application.Options{
-		Name:        "pwsh-mcp",
+		Name:        "PwshDeck",
 		Description: "Interactive pwsh terminal with MCP remote control",
 		Services: []application.Service{
 			application.NewService(pwshSvc),

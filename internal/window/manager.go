@@ -10,8 +10,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"pwsh-mcp/internal/config"
-	"pwsh-mcp/internal/session"
+	"pwshdeck/internal/config"
+	"pwshdeck/internal/session"
 )
 
 // WindowInfo is the wire-safe view of an application window.
@@ -79,7 +79,7 @@ func (w *WindowManager) NewWindow() (*WindowInfo, error) {
 	w.mu.Unlock()
 
 	name := fmt.Sprintf("terminal-%d", n)
-	title := fmt.Sprintf("pwsh Terminal #%d", n)
+	title := fmt.Sprintf("PwshDeck #%d", n)
 	w.mu.Lock()
 	w.titles[name] = title
 	w.mu.Unlock()
@@ -224,7 +224,7 @@ func (w *WindowManager) ensureTray(win *application.WebviewWindow) {
 	w.primary = win.Name()
 
 	tray := w.app.SystemTray.New()
-	tray.SetTooltip("pwsh-mcp")
+	tray.SetTooltip("PwshDeck")
 	if w.icon != nil {
 		tray.SetIcon(w.icon)
 	}
@@ -240,7 +240,7 @@ func (w *WindowManager) ensureTray(win *application.WebviewWindow) {
 // trayMenu builds the right-click menu for the tray icon.
 func (w *WindowManager) trayMenu() *application.Menu {
 	m := application.NewMenu()
-	m.Add("显示 pwsh-mcp").OnClick(func(*application.Context) {
+	m.Add("显示 PwshDeck").OnClick(func(*application.Context) {
 		w.ShowFromTray()
 	})
 	m.AddSeparator()

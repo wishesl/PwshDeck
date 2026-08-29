@@ -25,7 +25,7 @@ import * as $models from "./models.js";
  * the WindowClosing hooks).
  */
 export function CloseWindow(name: string): $CancellablePromise<void> {
-    return $Call.ByID(123397956, name);
+    return $Call.ByID(1926622052, name);
 }
 
 /**
@@ -33,7 +33,7 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
  * tab). Sessions themselves are not persisted — each tab boots a fresh shell.
  */
 export function GetTabPrefs(): $CancellablePromise<config$0.TabPref[] | null> {
-    return $Call.ByID(666463739);
+    return $Call.ByID(4140394843);
 }
 
 /**
@@ -41,7 +41,7 @@ export function GetTabPrefs(): $CancellablePromise<config$0.TabPref[] | null> {
  * running in the background. The user restores it from the system tray icon.
  */
 export function HideToTray(): $CancellablePromise<void> {
-    return $Call.ByID(3083092165);
+    return $Call.ByID(2433129125);
 }
 
 /**
@@ -49,7 +49,7 @@ export function HideToTray(): $CancellablePromise<void> {
  * are still alive, ordered by name.
  */
 export function ListWindows(): $CancellablePromise<$models.WindowInfo[] | null> {
-    return $Call.ByID(3813580153);
+    return $Call.ByID(4125795609);
 }
 
 /**
@@ -57,7 +57,7 @@ export function ListWindows(): $CancellablePromise<$models.WindowInfo[] | null> 
  * window closes, sessions bound to it are stopped automatically.
  */
 export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
-    return $Call.ByID(2880287246);
+    return $Call.ByID(1230800302);
 }
 
 /**
@@ -65,7 +65,7 @@ export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
  * server). Used by the close dialog and the tray menu.
  */
 export function QuitApp(): $CancellablePromise<void> {
-    return $Call.ByID(423860886);
+    return $Call.ByID(2116147254);
 }
 
 /**
@@ -73,7 +73,7 @@ export function QuitApp(): $CancellablePromise<void> {
  * launch.
  */
 export function SetTabPrefs(prefs: config$0.TabPref[] | null): $CancellablePromise<void> {
-    return $Call.ByID(4210434159, prefs);
+    return $Call.ByID(4166640591, prefs);
 }
 
 /**
@@ -82,5 +82,5 @@ export function SetTabPrefs(prefs: config$0.TabPref[] | null): $CancellablePromi
  * the WebView2 surface) and taskbar-minimised windows (need UnMinimise()).
  */
 export function ShowFromTray(): $CancellablePromise<void> {
-    return $Call.ByID(1472431269);
+    return $Call.ByID(4169838341);
 }

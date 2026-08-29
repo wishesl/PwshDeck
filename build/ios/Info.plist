@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>pwsh-mcp.exe</string>
+    <string>PwshDeck.exe</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.pwshmcp</string>
+    <string>com.pwshdeck.app</string>
     <key>CFBundleName</key>
     <string>My Product</string>
     <key>CFBundleDisplayName</key>

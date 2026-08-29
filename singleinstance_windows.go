@@ -11,13 +11,13 @@ import (
 
 // mutexName identifies the single running GUI instance. `Local\` scopes it to
 // the interactive session (the stdio --mcp mode intentionally skips this).
-const mutexName = `Local\pwsh-mcp-single-instance`
+const mutexName = `Local\PwshDeck-single-instance`
 
 // showEventName lets a second instance tell the running instance to reveal its
 // (possibly tray-hidden) windows. Revealing must go through Wails' own Show()
 // path — a bare ShowWindow(SW_SHOW) from the second process would surface an
 // empty/white WebView2 surface, because it skips chromium.Show().
-const showEventName = `Local\pwsh-mcp-show-request`
+const showEventName = `Local\PwshDeck-show-request`
 
 var singleInstanceHandle windows.Handle
 

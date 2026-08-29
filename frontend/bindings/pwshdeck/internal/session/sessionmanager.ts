@@ -22,14 +22,14 @@ import * as $models from "./models.js";
  * that window stops the session.
  */
 export function BindSessionWindow(id: string, windowName: string): $CancellablePromise<void> {
-    return $Call.ByID(25511881, id, windowName);
+    return $Call.ByID(3224443049, id, windowName);
 }
 
 /**
  * ListSessions returns all sessions, oldest first.
  */
 export function ListSessions(): $CancellablePromise<$models.SessionInfo[] | null> {
-    return $Call.ByID(2993210509);
+    return $Call.ByID(3135411373);
 }
 
 /**
@@ -37,7 +37,7 @@ export function ListSessions(): $CancellablePromise<$models.SessionInfo[] | null
  * returned NextOffset for follow-up calls; offset 0 returns recent history.
  */
 export function ReadOutput(id: string, since: number): $CancellablePromise<[string | null, number, boolean]> {
-    return $Call.ByID(3812374817, id, since);
+    return $Call.ByID(1490275393, id, since);
 }
 
 /**
@@ -45,14 +45,14 @@ export function ReadOutput(id: string, since: number): $CancellablePromise<[stri
  * its layout. Called by the frontend whenever xterm.js is resized.
  */
 export function Resize(id: string, cols: number, rows: number): $CancellablePromise<void> {
-    return $Call.ByID(2966515760, id, cols, rows);
+    return $Call.ByID(2057510160, id, cols, rows);
 }
 
 /**
  * ShutdownAll closes every session; used on application exit.
  */
 export function ShutdownAll(): $CancellablePromise<void> {
-    return $Call.ByID(244979753);
+    return $Call.ByID(1130224073);
 }
 
 /**
@@ -63,14 +63,14 @@ export function ShutdownAll(): $CancellablePromise<void> {
  * path that no longer exists also falls back to home).
  */
 export function StartSession(windowName: string, workDir: string): $CancellablePromise<$models.SessionInfo | null> {
-    return $Call.ByID(2696017376, windowName, workDir);
+    return $Call.ByID(2131461376, windowName, workDir);
 }
 
 /**
  * StopSession terminates a session's ConPTY and shell, then forgets it.
  */
 export function StopSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(1653264108, id);
+    return $Call.ByID(2079204236, id);
 }
 
 /**
@@ -78,7 +78,7 @@ export function StopSession(id: string): $CancellablePromise<void> {
  * Called when a window closes so its shell does not leak.
  */
 export function StopSessionsForWindow(windowName: string): $CancellablePromise<void> {
-    return $Call.ByID(3738234052, windowName);
+    return $Call.ByID(529910628, windowName);
 }
 
 /**
@@ -87,5 +87,5 @@ export function StopSessionsForWindow(windowName: string): $CancellablePromise<v
  * onData callback, and we pass it through untouched.
  */
 export function WriteInput(id: string, data: string): $CancellablePromise<void> {
-    return $Call.ByID(3918180837, id, data);
+    return $Call.ByID(1901381125, id, data);
 }

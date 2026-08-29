@@ -9,8 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"pwsh-mcp/internal/session"
-	"pwsh-mcp/internal/window"
+	"pwshdeck/internal/session"
+	"pwshdeck/internal/window"
 )
 
 // mcpMaxToolOutput bounds the output text returned by execute_command /
@@ -165,7 +165,7 @@ func toolDesc(name string) string {
 // tools are registered anyway but report "unavailable" at call time (used to
 // collect the tool list for the UI).
 func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp.Server, []ToolInfo) {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "pwsh-mcp", Version: "0.1.0"}, nil)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "PwshDeck", Version: "0.1.0"}, nil)
 
 	// ---- list_sessions -------------------------------------------------
 	mcp.AddTool(srv,

@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,6 +29,13 @@ const (
 // fileMu serializes config file IO so concurrent Load/Save calls (e.g. MCP
 // toggle + tab persistence) cannot corrupt the file.
 var fileMu sync.Mutex
+
+// configDirName is the per-user settings directory. legacyConfigDirName is the
+// directory used before the rename to PwshDeck; Load() migrates it on first run.
+const (
+	configDirName       = "PwshDeck"
+	legacyConfigDirName = "pwsh-mcp"
+)
 
 // TabPref is the persisted UI state of one terminal tab (sessions themselves
 // are not restored — each tab boots a fresh shell on startup).
@@ -63,6 +71,8 @@ func Load() *Config {
 
 	fileMu.Lock()
 	defer fileMu.Unlock()
+
+	migrateLocked()
 
 	path, err := configPath()
 	if err != nil {
@@ -133,10 +143,31 @@ func (c *Config) saveLocked() error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+// migrateLocked moves the legacy (pre-rename) config directory to the new
+// location when the new one does not exist yet, so existing settings survive
+// the rename. Callers must hold fileMu.
+func migrateLocked() {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	oldDir := filepath.Join(dir, legacyConfigDirName)
+	newDir := filepath.Join(dir, configDirName)
+	if _, err := os.Stat(newDir); err == nil {
+		return // already migrated or created fresh
+	}
+	if _, err := os.Stat(oldDir); err != nil {
+		return // nothing to migrate
+	}
+	if err := os.Rename(oldDir, newDir); err != nil {
+		log.Printf("config: migrate %s -> %s failed: %v", oldDir, newDir, err)
+	}
+}
+
 func configPath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve user config dir: %w", err)
 	}
-	return filepath.Join(dir, "pwsh-mcp", "config.json"), nil
+	return filepath.Join(dir, configDirName, "config.json"), nil
 }

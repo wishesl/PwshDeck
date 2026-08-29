@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Events, Window } from '@wailsio/runtime';
-import { WindowManager } from '../bindings/pwsh-mcp/internal/window';
+import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import McpPanel from './components/McpPanel';
 import TabMenu from './components/TabMenu';
@@ -268,7 +268,7 @@ export default function App() {
     <div className="app">
       <div className="topbar">
         <div className="brand">
-          pwsh<span className="brand-accent">-mcp</span>
+          Pwsh<span className="brand-accent">Deck</span>
         </div>
         <div className="tab-bar">
           {visibleTabs.map((tab) => {

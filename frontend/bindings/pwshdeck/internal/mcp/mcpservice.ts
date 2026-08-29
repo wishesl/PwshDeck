@@ -6,7 +6,7 @@
  * 
  * Two transports are supported:
  *   - streamable-HTTP on 127.0.0.1 (GUI mode, toggle from the MCP page)
- *   - stdio via `pwsh-mcp.exe --mcp` (headless, for classic client configs)
+ *   - stdio via `PwshDeck.exe --mcp` (headless, for classic client configs)
  * @module
  */
 
@@ -22,7 +22,7 @@ import * as $models from "./models.js";
  * Disable stops the HTTP MCP server and persists the choice.
  */
 export function Disable(): $CancellablePromise<void> {
-    return $Call.ByID(3112910464);
+    return $Call.ByID(250607584);
 }
 
 /**
@@ -32,19 +32,19 @@ export function Disable(): $CancellablePromise<void> {
  * the server. Restarting on a new port is allowed while running.
  */
 export function Enable(port: number): $CancellablePromise<void> {
-    return $Call.ByID(3902656803, port);
+    return $Call.ByID(919729923, port);
 }
 
 /**
  * GetStatus reports the MCP server state for the management UI.
  */
 export function GetStatus(): $CancellablePromise<$models.MCPStatus> {
-    return $Call.ByID(2433951426);
+    return $Call.ByID(687435234);
 }
 
 /**
  * Shutdown stops the HTTP server on application exit.
  */
 export function Shutdown(): $CancellablePromise<void> {
-    return $Call.ByID(20376910);
+    return $Call.ByID(3842915374);
 }

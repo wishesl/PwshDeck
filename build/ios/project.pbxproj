@@ -180,7 +180,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.example.pwshmcp";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.pwshdeck.app";
 				PRODUCT_NAME = "My Product";
 				CODE_SIGNING_ALLOWED = NO;
 				SDKROOT = iphoneos;
@@ -196,7 +196,7 @@
 					"$(inherited)",
 					"-ObjC",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.example.pwshmcp";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.pwshdeck.app";
 				PRODUCT_NAME = "My Product";
 				CODE_SIGNING_ALLOWED = NO;
 				SDKROOT = iphoneos;

@@ -1,4 +1,4 @@
-module pwsh-mcp
+module pwshdeck
 
 go 1.25.0
 

@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=My Product
-Comment=A pwsh-mcp application
+Comment=A PwshDeck application
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/pwsh-mcp.exe %u
+Exec=/usr/local/bin/PwshDeck.exe %u
 Terminal=false
 Type=Application
-Icon=pwsh-mcp.exe
+Icon=PwshDeck.exe
 Categories=Utility;
-StartupWMClass=pwsh-mcp.exe
+StartupWMClass=PwshDeck.exe
 
  

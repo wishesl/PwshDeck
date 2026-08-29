@@ -5,10 +5,10 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "0.1.0",
-			"CompanyName": "pwsh-mcp",
+			"CompanyName": "PwshDeck",
 			"FileDescription": "Interactive pwsh terminal with MCP remote control",
-			"LegalCopyright": "© 2026, pwsh-mcp",
-			"ProductName": "pwsh-mcp",
+			"LegalCopyright": "© 2026, PwshDeck",
+			"ProductName": "PwshDeck",
 			"Comments": "PowerShell terminal + MCP remote control"
 		}
 	}

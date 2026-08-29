@@ -18,9 +18,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"pwsh-mcp/internal/config"
-	"pwsh-mcp/internal/session"
-	"pwsh-mcp/internal/window"
+	"pwshdeck/internal/config"
+	"pwshdeck/internal/session"
+	"pwshdeck/internal/window"
 )
 
 // ToolInfo describes an exposed MCP tool for the management UI.
@@ -43,7 +43,7 @@ type MCPStatus struct {
 //
 // Two transports are supported:
 //   - streamable-HTTP on 127.0.0.1 (GUI mode, toggle from the MCP page)
-//   - stdio via `pwsh-mcp.exe --mcp` (headless, for classic client configs)
+//   - stdio via `PwshDeck.exe --mcp` (headless, for classic client configs)
 type MCPService struct {
 	app  *application.App
 	pwsh *session.SessionManager

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MCPService } from '../../../bindings/pwsh-mcp/internal/mcp';
-import type { MCPStatus } from '../../../bindings/pwsh-mcp/internal/mcp';
+import { MCPService } from '../../../bindings/pwshdeck/internal/mcp';
+import type { MCPStatus } from '../../../bindings/pwshdeck/internal/mcp';
 import './McpPanel.css';
 
 export default function McpPanel() {
@@ -54,15 +54,15 @@ export default function McpPanel() {
     .replace(/^"|"$/g, '');
 
   const httpConfig = JSON.stringify(
-    { mcpServers: { 'pwsh-mcp': { type: 'http', url } } },
+    { mcpServers: { 'PwshDeck': { type: 'http', url } } },
     null,
     2,
   );
   const stdioConfig = JSON.stringify(
     {
       mcpServers: {
-        'pwsh-mcp': {
-          command: exePath || 'pwsh-mcp.exe',
+        'PwshDeck': {
+          command: exePath || 'PwshDeck.exe',
           args: ['--mcp'],
         },
       },
@@ -126,7 +126,7 @@ export default function McpPanel() {
           </button>
         </pre>
         <p className="hint">
-          stdio 模式直接运行 <code>{exePath || 'pwsh-mcp.exe'} --mcp</code>
+          stdio 模式直接运行 <code>{exePath || 'PwshDeck.exe'} --mcp</code>
           ，以命令形式注册到任意 MCP 客户端。
         </p>
       </section>
