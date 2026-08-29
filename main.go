@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"embed"
-
+	"flag"
 	"log"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -16,23 +18,49 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur. 哈哈
+// main supports two modes:
+//   - default: the GUI terminal app; optionally serves MCP over HTTP on
+//     127.0.0.1 so local AI clients can manage pwsh sessions.
+//   - --mcp:   a headless stdio MCP server speaking JSON-RPC on stdin/stdout,
+//     for classic "command" style MCP client configs.
 func main() {
+	mcpStdio := flag.Bool("mcp", false, "run as a headless stdio MCP server for AI clients")
+	flag.Parse()
+
+	if *mcpStdio {
+		runStdioMCPServer()
+		return
+	}
+	runGUI()
+}
+
+// runStdioMCPServer serves the pwsh-management tools over stdin/stdout without
+// any GUI. Sessions created here are window-less invisible shells.
+func runStdioMCPServer() {
+	pwsh := NewSessionManager()
+	srv, _ := buildMCPServer(pwsh, nil)
+	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// runGUI boots the desktop application.
+func runGUI() {
+	cfg := LoadConfig()
+	pwshSvc := NewSessionManager()
+	winSvc := NewWindowManager()
+	mcpSvc := NewMCPService(cfg)
 
 	// Create a new Wails application by providing the necessary options.
-	// Variables 'Name' and 'Description' are for application metadata.
-	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
-	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
-	// 'Mac' options tailor the application when running an macOS.
-	pwshSvc := NewPwshService()
+	// 'Assets' configures the asset server with the 'FS' variable pointing to
+	// the frontend files. 'Services' are exposed to the frontend bindings.
 	app := application.New(application.Options{
 		Name:        "pwsh-mcp",
-		Description: "A demo of using raw HTML & CSS",
+		Description: "Interactive pwsh terminal with MCP remote control",
 		Services: []application.Service{
-			application.NewService(&GreetService{}),
 			application.NewService(pwshSvc),
+			application.NewService(winSvc),
+			application.NewService(mcpSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -41,37 +69,31 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
-	pwshSvc.Init(app)
 
-	// Create a new window with the necessary options.
-	// 'Title' is the title of the window.
-	// 'Mac' options tailor the window when running on macOS.
-	// 'BackgroundColour' is the background colour of the window.
-	// 'URL' is the URL that will be loaded into the webview.
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "pwsh-mcp Terminal",
-		// Window sized to the golden ratio (1000 / 618 ≈ 1.618).
-		Width:  1000,
-		Height: 618,
-		MinWidth:  500,
-		MinHeight: 300,
-		// Transparent window background: the terminal UI paints its own
-		// semi-transparent surface so the desktop shows through.
-		BackgroundType:   application.BackgroundTypeTransparent,
-		BackgroundColour: application.RGBA{Red: 8, Green: 10, Blue: 16, Alpha: 140},
-		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
-			Backdrop:                application.MacBackdropTranslucent,
-			TitleBar:                application.MacTitleBarHiddenInset,
-		},
-		URL: "/",
+	pwshSvc.init(app)
+	winSvc.init(app, pwshSvc)
+	mcpSvc.init(app, pwshSvc, winSvc)
+
+	// Close every shell when the application exits.
+	app.OnShutdown(func() {
+		mcpSvc.Shutdown()
+		pwshSvc.ShutdownAll()
 	})
 
-	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
+	// Restore the persisted MCP server choice.
+	if cfg.MCPEnabled {
+		if err := mcpSvc.Enable(cfg.MCPPort); err != nil {
+			log.Printf("failed to auto-start MCP server on port %d: %v", cfg.MCPPort, err)
+		}
+	}
 
-	// If an error occurred while running the application, log it and exit.
-	if err != nil {
+	// First terminal window; more can be opened from the UI or via MCP.
+	if _, err := winSvc.NewWindow(); err != nil {
+		log.Fatal(err)
+	}
+
+	// Run the application. This blocks until the application has been exited.
+	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -1,0 +1,95 @@
+/* App shell: translucent glass panel with a slim tool bar on top. */
+
+.app {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.82) 0%, rgba(8, 10, 16, 0.66) 100%);
+  color: #d4d4d4;
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  height: 44px;
+  flex: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 12, 20, 0.55);
+  --wails-draggable: drag;
+}
+
+/* Controls inside the bar must not start a window drag. */
+.topbar button {
+  --wails-draggable: no-drag;
+}
+
+.brand {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #7aa2f7;
+  white-space: nowrap;
+}
+
+.brand-accent {
+  color: #9ece6a;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  color: #9aa0b0;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.tab:hover {
+  color: #d4d4d4;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tab.active {
+  color: #e8eaf0;
+  background: rgba(122, 162, 247, 0.18);
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+.new-window-btn {
+  border: 1px solid rgba(122, 162, 247, 0.35);
+  background: rgba(122, 162, 247, 0.12);
+  color: #c0cffc;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+
+.new-window-btn:hover {
+  background: rgba(122, 162, 247, 0.22);
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
