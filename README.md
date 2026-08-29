@@ -10,7 +10,7 @@
   - **streamable-HTTP**：`http://127.0.0.1:<port>/mcp`，随 GUI 运行，可在「MCP 管理」页一键启停
   - **stdio**：`pwsh-mcp.exe --mcp`，无头模式，适合经典 `command` 型 MCP 客户端配置
 - **暴露的 MCP 工具**：`list_sessions` / `create_session` / `send_input` / `execute_command` / `read_output` / `stop_session` / `resize_session` / `list_windows` / `open_window`
-- **配置持久化**：`config.json` 保存 MCP 开关与端口（`%APPDATA%\pwsh-mcp\config.json`）
+- **配置持久化**：`config.json` 保存 MCP 开关与端口，以及终端标签布局（名称、颜色、**工作目录**，`%APPDATA%\pwsh-mcp\config.json`）；重启后标签恢复，每个标签的 pwsh 会直接启动在上次的工作目录
 
 ## 项目结构
 
@@ -104,7 +104,7 @@ MCP 服务只监听 `127.0.0.1`，不对局域网开放。
 | `mcp_session_timeout_minutes` | `60` | 空闲 MCP 客户端会话回收时间（0 = 不回收） |
 | `max_sessions` | `10` | 并发会话上限（0 = 不限制），超出时 `create_session` 报错 |
 | `idle_timeout_minutes` | `30` | 无窗口（MCP 创建）会话闲置自动回收（0 = 关闭）；GUI 标签页会话不受影响 |
-| `tabs` | `[]` | 终端标签布局（名称 + 颜色），重启后恢复，会话本身不恢复 |
+| `tabs` | `[]` | 终端标签布局（名称 + 颜色 + 工作目录），重启后恢复，会话本身不恢复但每个会话以上次所在目录启动 |
 
 ## 其他行为
 

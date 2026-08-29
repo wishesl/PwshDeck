@@ -13,4 +13,5 @@ export interface SessionInfo {
     "created_at": string;
     "cols": number;
     "rows": number;
+    "pwd": string;
 }

@@ -4,9 +4,11 @@
 package session
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"sync"
 	"time"
 
@@ -22,6 +24,11 @@ type TerminalSession struct {
 	ID     string
 	Title  string
 	Window string
+	// Pwd is the shell's current working directory, tracked from the OSC 9;9
+	// cwd reports the prompt hook (see pwshCommandLine in manager.go) emits on
+	// every prompt. Tabs persist it so a restored shell boots in the same
+	// directory. Guarded by mu.
+	Pwd string
 
 	cpty *conpty.ConPty
 	cols int
@@ -31,6 +38,7 @@ type TerminalSession struct {
 	running    bool
 	createdAt  time.Time
 	lastActive time.Time // last input/output activity, for idle recycling
+	oscCarry   []byte    // tail of recent output for split OSC 9;9 reports; readLoop only
 
 	buf outputBuffer
 }
@@ -45,6 +53,7 @@ type SessionInfo struct {
 	CreatedAt string `json:"created_at"`
 	Cols      int    `json:"cols"`
 	Rows      int    `json:"rows"`
+	Pwd       string `json:"pwd"`
 }
 
 // Info snapshots the current session state.
@@ -59,6 +68,7 @@ func (s *TerminalSession) Info() SessionInfo {
 		CreatedAt: s.createdAt.Format(time.RFC3339),
 		Cols:      s.cols,
 		Rows:      s.rows,
+		Pwd:       s.Pwd,
 	}
 }
 
@@ -85,6 +95,42 @@ func (s *TerminalSession) idleFor() time.Duration {
 		return time.Since(s.createdAt)
 	}
 	return time.Since(s.lastActive)
+}
+
+// setPwd records the shell's current working directory, as reported by the
+// prompt hook.
+func (s *TerminalSession) setPwd(pwd string) {
+	s.mu.Lock()
+	s.Pwd = pwd
+	s.mu.Unlock()
+}
+
+// oscCwdPattern matches ConEmu-style OSC 9;9 working-directory reports
+// (`ESC ] 9 ; 9 ; "path" ESC \`), which the prompt hook emits on every prompt.
+var oscCwdPattern = regexp.MustCompile(`\x1b\]9;9;"([^"]*)"(?:\x07|\x1b\\)`)
+
+// oscCarryBytes caps how much recent output is remembered across read chunks.
+const oscCarryBytes = 1024
+
+// consumeCwdReport scans a chunk of ConPTY output for OSC 9;9 cwd reports and
+// returns the newest path found (empty when the chunk carries none). A report
+// split across two reads is still recognized by keeping the tail of previous
+// output in oscCarry. Called from readLoop only, so oscCarry needs no locking.
+func (s *TerminalSession) consumeCwdReport(chunk []byte) string {
+	combined := append(append([]byte{}, s.oscCarry...), chunk...)
+	var pwd string
+	for _, m := range oscCwdPattern.FindAllSubmatch(combined, -1) {
+		pwd = string(m[1])
+	}
+	if bytes.Contains(combined, []byte("\x1b]")) {
+		if len(combined) > oscCarryBytes {
+			combined = combined[len(combined)-oscCarryBytes:]
+		}
+		s.oscCarry = append(s.oscCarry[:0], combined...)
+	} else {
+		s.oscCarry = nil
+	}
+	return pwd
 }
 
 func (s *TerminalSession) writeInput(data string) error {

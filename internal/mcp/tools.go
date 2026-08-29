@@ -97,7 +97,7 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			if pwsh == nil {
 				return nil, createdSessionOut{}, fmt.Errorf("pwsh service unavailable")
 			}
-			info, err := pwsh.StartSession("")
+			info, err := pwsh.StartSession("", "")
 			if err != nil {
 				return nil, createdSessionOut{}, err
 			}
@@ -261,7 +261,7 @@ func attachWindow(wins *window.WindowManager, pwsh *session.SessionManager, sess
 		return nil, err
 	}
 	if sessionID == "" {
-		if _, err := pwsh.StartSession(info.Name); err != nil {
+		if _, err := pwsh.StartSession(info.Name, ""); err != nil {
 			_ = wins.CloseWindow(info.Name)
 			return nil, err
 		}

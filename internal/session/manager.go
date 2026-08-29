@@ -2,12 +2,15 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/UserExistsError/conpty"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -22,6 +25,10 @@ const (
 	// EventStatus reports per-session shell liveness (termEvent payload with
 	// Data set to StatusConnected / StatusDisconnected).
 	EventStatus = "term_status"
+	// EventPwd reports per-session working-directory changes (termEvent
+	// payload with Data set to the current path), so the UI can persist each
+	// tab's pwd without polling.
+	EventPwd = "term_pwd"
 )
 
 // Status values carried in termEvent.Data for EventStatus.
@@ -119,8 +126,10 @@ func (s *SessionManager) idleJanitor() {
 
 // StartSession launches a new pwsh inside a ConPTY and registers it.
 // windowName associates the session with a GUI window so it can be cleaned up
-// when that window closes (may be empty for MCP-only sessions).
-func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
+// when that window closes (may be empty for MCP-only sessions). workDir sets
+// the shell's initial working directory ("" = the user's home directory; a
+// path that no longer exists also falls back to home).
+func (s *SessionManager) StartSession(windowName, workDir string) (*SessionInfo, error) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -139,10 +148,11 @@ func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
 	if err != nil {
 		home = "." // fall back to the current working directory
 	}
+	dir := resolveWorkDir(workDir, home)
 	cpty, err := conpty.Start(
-		`pwsh.exe -NoProfile`,
+		pwshCommandLine(),
 		conpty.ConPtyDimensions(120, 30),
-		conpty.ConPtyWorkDir(home),
+		conpty.ConPtyWorkDir(dir),
 	)
 	if err != nil {
 		s.mu.Unlock()
@@ -153,6 +163,7 @@ func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
 		ID:         id,
 		Title:      title,
 		Window:     windowName,
+		Pwd:        dir,
 		cpty:       cpty,
 		cols:       120,
 		rows:       30,
@@ -172,6 +183,55 @@ func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
 	info := sess.Info()
 	log.Printf("session %s started (%s)", id, windowName)
 	return &info, nil
+}
+
+// promptHookScript redefines the interactive prompt so every prompt emits an
+// invisible ConEmu-style OSC 9;9 cwd report (`ESC ] 9 ; 9 ; "path" ESC \`)
+// right before the normal prompt text, then renders the default `PS C:\…> `
+// prompt unchanged. The manager parses those reports out of the output stream
+// to track each session's working directory for tab persistence; xterm.js
+// ignores the unknown OSC sequence. The shell runs with -NoProfile, so the
+// default prompt is what is being reproduced.
+const promptHookScript = `
+function global:prompt {
+  $h = $host.UI
+  $h.Write([char]27 + ']9;9;' + [char]34 + (Get-Location).Path + [char]34 + [char]27 + '\')
+  'PS ' + $executionContext.SessionState.Path.CurrentLocation + ('>' * ($nestedPromptLevel + 1)) + ' '
+}
+`
+
+// pwshCommandLine builds the pwsh invocation used for every session. The
+// prompt hook is injected through -EncodedCommand so no quote escaping is
+// needed; -NoExit keeps the shell interactive after the hook was installed.
+func pwshCommandLine() string {
+	return "pwsh.exe -NoLogo -NoProfile -NoExit -EncodedCommand " + encodeCommand(promptHookScript)
+}
+
+// encodeCommand base64-encodes a script as UTF-16LE, the format PowerShell's
+// -EncodedCommand expects.
+func encodeCommand(script string) string {
+	u := utf16.Encode([]rune(script))
+	b := make([]byte, 0, len(u)*2)
+	for _, v := range u {
+		b = append(b, byte(v), byte(v>>8))
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// resolveWorkDir returns the working directory a new shell should start in:
+// the requested one when it resolves to an existing directory, otherwise the
+// user's home directory (so a deleted folder never breaks session startup).
+func resolveWorkDir(workDir, home string) string {
+	if workDir == "" {
+		return home
+	}
+	if abs, err := filepath.Abs(workDir); err == nil {
+		workDir = abs
+	}
+	if fi, err := os.Stat(workDir); err == nil && fi.IsDir() {
+		return workDir
+	}
+	return home
 }
 
 // WriteInput forwards keystrokes or pasted text to a session's stdin.
@@ -340,10 +400,14 @@ func (s *SessionManager) readLoop(sess *TerminalSession) {
 	for {
 		n, err := sess.cpty.Read(buf)
 		if n > 0 {
-			chunk := string(buf[:n])
-			sess.buf.write(buf[:n])
+			chunk := buf[:n]
+			sess.buf.write(chunk)
+			if pwd := sess.consumeCwdReport(chunk); pwd != "" {
+				sess.setPwd(pwd)
+				s.emitPwd(sess, pwd)
+			}
 			sess.touch() // output counts as activity for idle recycling
-			s.emitData(sess, chunk)
+			s.emitData(sess, string(chunk))
 		}
 		if err != nil {
 			log.Printf("conpty read ended for session %s: %v", sess.ID, err)
@@ -373,5 +437,11 @@ func (s *SessionManager) emitData(sess *TerminalSession, chunk string) {
 func (s *SessionManager) emitStatus(sess *TerminalSession, status string) {
 	if s.app != nil {
 		s.app.Event.Emit(EventStatus, termEvent{ID: sess.ID, Data: status})
+	}
+}
+
+func (s *SessionManager) emitPwd(sess *TerminalSession, pwd string) {
+	if s.app != nil {
+		s.app.Event.Emit(EventPwd, termEvent{ID: sess.ID, Data: pwd})
 	}
 }

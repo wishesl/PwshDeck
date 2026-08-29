@@ -58,10 +58,12 @@ export function ShutdownAll(): $CancellablePromise<void> {
 /**
  * StartSession launches a new pwsh inside a ConPTY and registers it.
  * windowName associates the session with a GUI window so it can be cleaned up
- * when that window closes (may be empty for MCP-only sessions).
+ * when that window closes (may be empty for MCP-only sessions). workDir sets
+ * the shell's initial working directory ("" = the user's home directory; a
+ * path that no longer exists also falls back to home).
  */
-export function StartSession(windowName: string): $CancellablePromise<$models.SessionInfo | null> {
-    return $Call.ByID(2696017376, windowName);
+export function StartSession(windowName: string, workDir: string): $CancellablePromise<$models.SessionInfo | null> {
+    return $Call.ByID(2696017376, windowName, workDir);
 }
 
 /**

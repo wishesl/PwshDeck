@@ -8,4 +8,10 @@
 export interface TabPref {
     "title": string;
     "accent": string;
+
+    /**
+     * Pwd is the tab's last-known working directory; the restored shell boots
+     * here instead of the user's home directory. Empty means home.
+     */
+    "pwd": string;
 }

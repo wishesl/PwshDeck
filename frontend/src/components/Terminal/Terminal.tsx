@@ -16,6 +16,9 @@ interface TerminalProps {
   accent?: string;
   /** Whether this tab is visible; triggers a re-fit when it becomes active. */
   active?: boolean;
+  /** Working directory to boot the shell in ('' = user home). Only used at
+   *  mount time, when the tab is restored from a persisted pwd. */
+  initialDir?: string;
   /** Fired with the session id once the shell is connected. */
   onReady?: (sessionId: string) => void;
 }
@@ -39,7 +42,7 @@ function themeFor(accent: string): ITheme {
   };
 }
 
-export default function Terminal({ accent = DEFAULT_ACCENT, active = true, onReady }: TerminalProps) {
+export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initialDir = '', onReady }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -104,7 +107,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, onRea
       } catch {
         /* browser dev: no window identity */
       }
-      const info = await SessionManager.StartSession(winName);
+      const info = await SessionManager.StartSession(winName, initialDir);
       if (!info) {
         throw new Error('启动会话失败：服务返回空结果');
       }

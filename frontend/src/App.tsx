@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Window } from '@wailsio/runtime';
+import { Events, Window } from '@wailsio/runtime';
 import { WindowManager } from '../bindings/pwsh-mcp/internal/window';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import McpPanel from './components/McpPanel';
@@ -10,6 +10,7 @@ type Tab = {
   id: string;
   title: string;
   accent: string;
+  pwd: string;
   sessionId: string | null;
 };
 
@@ -29,6 +30,7 @@ const initialTab: Tab = {
   id: nextTabId(),
   title: '终端1',
   accent: DEFAULT_ACCENT,
+  pwd: '',
   sessionId: null,
 };
 
@@ -42,19 +44,60 @@ export default function App() {
   const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
   const moreBtnRef = useRef<HTMLButtonElement | null>(null);
   const tabSeqRef = useRef(1);
+  // Latest tab list for deferred handlers (debounced pwd persist, unload).
+  const tabsRef = useRef<Tab[]>(tabs);
+  const pwdTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
-  // Persist the tab layout (titles + accent colors; sessions are not restored).
+  // Persist the tab layout (titles + accent colors + last working directory;
+  // sessions themselves are not restored).
   const persistTabs = (list: Tab[]) => {
     WindowManager.SetTabPrefs(
-      list.map((t) => ({ title: t.title, accent: t.accent })),
+      list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
     ).catch(() => {});
   };
+
+  // Track each session's working directory (term_pwd events) and persist it,
+  // debounced so prompt re-renders do not spam config IO.
+  useEffect(() => {
+    const off = Events.On('term_pwd', (event: any) => {
+      const payload = event?.data;
+      if (!payload || typeof payload.id !== 'string' || typeof payload.data !== 'string') return;
+      setTabs((prev) => {
+        let changed = false;
+        const next = prev.map((t) => {
+          if (t.sessionId === payload.id && t.pwd !== payload.data) {
+            changed = true;
+            return { ...t, pwd: payload.data };
+          }
+          return t;
+        });
+        return changed ? next : prev;
+      });
+      if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
+      pwdTimerRef.current = window.setTimeout(() => {
+        persistTabs(tabsRef.current);
+      }, 1500);
+    });
+    const onUnload = () => {
+      // Best effort: persist the freshest pwd when the window goes away.
+      persistTabs(tabsRef.current);
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      off();
+      window.removeEventListener('beforeunload', onUnload);
+      if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
+    };
+  }, []);
 
   // Restore the persisted tab layout on startup.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let prefs: { title: string; accent: string }[] = [];
+      let prefs: { title: string; accent: string; pwd: string }[] = [];
       try {
         prefs = (await WindowManager.GetTabPrefs()) ?? [];
       } catch {
@@ -67,6 +110,7 @@ export default function App() {
               id: nextTabId(),
               title: p.title || `终端${i + 1}`,
               accent: p.accent || DEFAULT_ACCENT,
+              pwd: p.pwd || '',
               sessionId: null,
             }))
           : [initialTab];
@@ -86,6 +130,7 @@ export default function App() {
       id: nextTabId(),
       title: `终端${tabSeqRef.current}`,
       accent: DEFAULT_ACCENT,
+      pwd: '',
       sessionId: null,
     };
     const next = [...tabs, tab];
@@ -266,6 +311,7 @@ export default function App() {
             <Terminal
               accent={tab.accent}
               active={tab.id === activeId}
+              initialDir={tab.pwd}
               onReady={(sid) => handleReady(tab.id, sid)}
             />
           </div>
