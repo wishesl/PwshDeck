@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,8 +89,14 @@ func (m *MCPService) GetStatus() MCPStatus {
 	}
 }
 
+// portProbeMax bounds how far Enable will search upward for a free port when
+// the requested one is already taken by another process.
+const portProbeMax = 50
+
 // Enable starts the streamable-HTTP MCP server on the given loopback port and
-// persists the choice. Restarting on a new port is allowed while running.
+// persists the choice. When the requested port is busy, the next free port up
+// to portProbeMax away is used instead, so a conflicting process never blocks
+// the server. Restarting on a new port is allowed while running.
 func (m *MCPService) Enable(port int) error {
 	if m.pwsh == nil {
 		return fmt.Errorf("service not initialized")
@@ -111,15 +118,41 @@ func (m *MCPService) Enable(port int) error {
 	}
 
 	srv, _ := BuildServer(m.pwsh, m.wins)
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	sessionTimeout := time.Duration(m.cfg.MCPSessionTimeoutMinutes) * time.Minute
+	handler := mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return srv },
+		&mcp.StreamableHTTPOptions{SessionTimeout: sessionTimeout},
+	)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", handler)
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("cannot listen on %s: %w", addr, err)
+	// Probe upward from the requested port until a listener succeeds.
+	var ln net.Listener
+	boundPort := 0
+	for attempt := 0; attempt <= portProbeMax; attempt++ {
+		p := port + attempt
+		if p > 65535 {
+			break
+		}
+		addr := fmt.Sprintf("127.0.0.1:%d", p)
+		l, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln = l
+			boundPort = p
+			break
+		}
+		if !isAddrInUse(err) {
+			return fmt.Errorf("cannot listen on %s: %w", addr, err)
+		}
+		log.Printf("mcp: port %d in use, trying %d", p, p+1)
 	}
+	if ln == nil {
+		return fmt.Errorf("no free port in range %d-%d", port, port+portProbeMax)
+	}
+	if boundPort != port {
+		log.Printf("mcp: requested port %d was busy, bound to %d instead", port, boundPort)
+	}
+
 	httpSrv := &http.Server{Handler: mux}
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -129,15 +162,22 @@ func (m *MCPService) Enable(port int) error {
 
 	m.httpSrv = httpSrv
 	m.running = true
-	m.port = port
+	m.port = boundPort
 
 	m.cfg.MCPEnabled = true
-	m.cfg.MCPPort = port
+	m.cfg.MCPPort = boundPort
 	if err := m.cfg.Save(); err != nil {
 		log.Printf("failed to persist mcp config: %v", err)
 	}
-	log.Printf("MCP server listening on http://%s/mcp", addr)
+	log.Printf("MCP server listening on http://127.0.0.1:%d/mcp", boundPort)
 	return nil
+}
+
+// isAddrInUse reports whether a listen error is "address already in use".
+func isAddrInUse(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Err != nil &&
+		strings.Contains(opErr.Err.Error(), "address already in use")
 }
 
 // Disable stops the HTTP MCP server and persists the choice.

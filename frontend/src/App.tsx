@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Window } from '@wailsio/runtime';
+import { WindowManager } from '../bindings/pwsh-mcp/internal/window';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import McpPanel from './components/McpPanel';
 import TabMenu from './components/TabMenu';
@@ -29,11 +30,49 @@ const initialTab: Tab = {
 };
 
 export default function App() {
-  const [tabs, setTabs] = useState<Tab[]>([initialTab]);
-  const [activeId, setActiveId] = useState(initialTab.id);
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [tabsLoaded, setTabsLoaded] = useState(false);
+  const [activeId, setActiveId] = useState('');
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [mcpOpen, setMcpOpen] = useState(false);
   const tabSeqRef = useRef(1);
+
+  // Persist the tab layout (titles + accent colors; sessions are not restored).
+  const persistTabs = (list: Tab[]) => {
+    WindowManager.SetTabPrefs(
+      list.map((t) => ({ title: t.title, accent: t.accent })),
+    ).catch(() => {});
+  };
+
+  // Restore the persisted tab layout on startup.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let prefs: { title: string; accent: string }[] = [];
+      try {
+        prefs = (await WindowManager.GetTabPrefs()) ?? [];
+      } catch {
+        /* browser dev or first run */
+      }
+      if (cancelled) return;
+      const restored: Tab[] =
+        prefs.length > 0
+          ? prefs.map((p, i) => ({
+              id: nextTabId(),
+              title: p.title || `终端${i + 1}`,
+              accent: p.accent || DEFAULT_ACCENT,
+              sessionId: null,
+            }))
+          : [initialTab];
+      tabSeqRef.current = restored.length;
+      setTabs(restored);
+      setActiveId(restored[0].id);
+      setTabsLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addTab = () => {
     tabSeqRef.current += 1;
@@ -43,8 +82,10 @@ export default function App() {
       accent: DEFAULT_ACCENT,
       sessionId: null,
     };
-    setTabs((prev) => [...prev, tab]);
+    const next = [...tabs, tab];
+    setTabs(next);
     setActiveId(tab.id);
+    persistTabs(next);
   };
 
   const closeTab = (id: string) => {
@@ -52,17 +93,22 @@ export default function App() {
     if (idx < 0 || tabs.length <= 1) return; // keep at least one tab
     const next = tabs.filter((t) => t.id !== id);
     setTabs(next);
+    persistTabs(next);
     if (activeId === id) {
       setActiveId(next[Math.min(idx, next.length - 1)].id);
     }
   };
 
   const renameTab = (id: string, title: string) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+    const next = tabs.map((t) => (t.id === id ? { ...t, title } : t));
+    setTabs(next);
+    persistTabs(next);
   };
 
   const setTabAccent = (id: string, accent: string) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, accent } : t)));
+    const next = tabs.map((t) => (t.id === id ? { ...t, accent } : t));
+    setTabs(next);
+    persistTabs(next);
   };
 
   const handleReady = (tabId: string, sessionId: string) => {
@@ -82,6 +128,12 @@ export default function App() {
   }, []);
 
   const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
+
+  // Do not mount terminals until the persisted tab layout is known, so no
+  // shell is started and immediately torn down during restoration.
+  if (!tabsLoaded) {
+    return <div className="app" />;
+  }
 
   return (
     <div className="app">

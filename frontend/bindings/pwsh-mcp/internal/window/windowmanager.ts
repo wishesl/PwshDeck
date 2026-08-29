@@ -14,6 +14,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as config$0 from "../config/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
 /**
@@ -22,6 +26,14 @@ import * as $models from "./models.js";
  */
 export function CloseWindow(name: string): $CancellablePromise<void> {
     return $Call.ByID(123397956, name);
+}
+
+/**
+ * GetTabPrefs returns the persisted terminal tab layout (title + accent per
+ * tab). Sessions themselves are not persisted — each tab boots a fresh shell.
+ */
+export function GetTabPrefs(): $CancellablePromise<config$0.TabPref[] | null> {
+    return $Call.ByID(666463739);
 }
 
 /**
@@ -38,4 +50,12 @@ export function ListWindows(): $CancellablePromise<$models.WindowInfo[] | null> 
  */
 export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
     return $Call.ByID(2880287246);
+}
+
+/**
+ * SetTabPrefs persists the terminal tab layout so it is restored on the next
+ * launch.
+ */
+export function SetTabPrefs(prefs: config$0.TabPref[] | null): $CancellablePromise<void> {
+    return $Call.ByID(4210434159, prefs);
 }

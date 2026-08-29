@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"pwsh-mcp/internal/config"
 	"pwsh-mcp/internal/session"
 )
 
@@ -128,4 +129,21 @@ func (w *WindowManager) ListWindows() []WindowInfo {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	return list
+}
+
+// GetTabPrefs returns the persisted terminal tab layout (title + accent per
+// tab). Sessions themselves are not persisted — each tab boots a fresh shell.
+func (w *WindowManager) GetTabPrefs() []config.TabPref {
+	return config.Load().Tabs
+}
+
+// SetTabPrefs persists the terminal tab layout so it is restored on the next
+// launch.
+func (w *WindowManager) SetTabPrefs(prefs []config.TabPref) error {
+	if prefs == nil {
+		prefs = []config.TabPref{}
+	}
+	cfg := config.Load()
+	cfg.Tabs = prefs
+	return cfg.Save()
 }

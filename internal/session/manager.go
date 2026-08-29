@@ -51,6 +51,9 @@ type termEvent struct {
 type SessionManager struct {
 	app *application.App
 
+	maxSessions int           // 0 = unlimited
+	idleTimeout time.Duration // 0 = disabled; only window-less sessions recycle
+
 	mu       sync.Mutex
 	sessions map[string]*TerminalSession
 	counter  int
@@ -58,9 +61,19 @@ type SessionManager struct {
 }
 
 // NewSessionManager constructs a service without an App instance.
-// Call Init(app) once the Wails application has been created.
-func NewSessionManager() *SessionManager {
-	return &SessionManager{sessions: make(map[string]*TerminalSession)}
+// maxSessions caps concurrently running shells (0 = unlimited) and
+// idleTimeout auto-recycles window-less sessions that stay silent that long
+// (0 = disabled). Call Init(app) once the Wails application has been created.
+func NewSessionManager(maxSessions int, idleTimeout time.Duration) *SessionManager {
+	s := &SessionManager{
+		sessions:    make(map[string]*TerminalSession),
+		maxSessions: maxSessions,
+		idleTimeout: idleTimeout,
+	}
+	if idleTimeout > 0 {
+		go s.idleJanitor()
+	}
+	return s
 }
 
 // Init binds the Wails app to the service. Excluded from frontend bindings.
@@ -68,6 +81,40 @@ func NewSessionManager() *SessionManager {
 //wails:ignore
 func (s *SessionManager) Init(app *application.App) {
 	s.app = app
+}
+
+// idleJanitor periodically closes window-less sessions that exceeded the idle
+// timeout, preventing MCP clients from leaking shells.
+func (s *SessionManager) idleJanitor() {
+	tick := s.idleTimeout / 4
+	if tick < time.Second {
+		tick = time.Second
+	}
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	for range t.C {
+		if s.closed {
+			return
+		}
+		var victims []*TerminalSession
+		s.mu.Lock()
+		for id, sess := range s.sessions {
+			sess.mu.Lock()
+			windowless := sess.Window == ""
+			running := sess.running
+			sess.mu.Unlock()
+			if windowless && running && sess.idleFor() >= s.idleTimeout {
+				victims = append(victims, sess)
+				delete(s.sessions, id)
+			}
+		}
+		s.mu.Unlock()
+		for _, sess := range victims {
+			_ = sess.close()
+			s.emitStatus(sess, StatusDisconnected)
+			log.Printf("session %s recycled: idle for %v", sess.ID, s.idleTimeout)
+		}
+	}
 }
 
 // StartSession launches a new pwsh inside a ConPTY and registers it.
@@ -78,6 +125,10 @@ func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
 	if s.closed {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("service is shutting down")
+	}
+	if s.maxSessions > 0 && len(s.sessions) >= s.maxSessions {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("session limit reached (%d); stop an existing session first", s.maxSessions)
 	}
 	s.counter++
 	n := s.counter
@@ -99,14 +150,15 @@ func (s *SessionManager) StartSession(windowName string) (*SessionInfo, error) {
 	}
 
 	sess := &TerminalSession{
-		ID:        id,
-		Title:     title,
-		Window:    windowName,
-		cpty:      cpty,
-		cols:      120,
-		rows:      30,
-		createdAt: time.Now(),
-		running:   true,
+		ID:         id,
+		Title:      title,
+		Window:     windowName,
+		cpty:       cpty,
+		cols:       120,
+		rows:       30,
+		createdAt:  time.Now(),
+		lastActive: time.Now(),
+		running:    true,
 	}
 	s.sessions[id] = sess
 	s.mu.Unlock()
@@ -290,6 +342,7 @@ func (s *SessionManager) readLoop(sess *TerminalSession) {
 		if n > 0 {
 			chunk := string(buf[:n])
 			sess.buf.write(buf[:n])
+			sess.touch() // output counts as activity for idle recycling
 			s.emitData(sess, chunk)
 		}
 		if err != nil {

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"flag"
 	"log"
+	"time"
 
 	mcpapi "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -40,9 +41,10 @@ func main() {
 }
 
 // runStdioMCPServer serves the pwsh-management tools over stdin/stdout without
-// any GUI. Sessions created here are window-less invisible shells.
+// any GUI. Sessions created here are window-less invisible shells; no session
+// cap or idle recycling applies (the client owns the process lifecycle).
 func runStdioMCPServer() {
-	pwsh := session.NewSessionManager()
+	pwsh := session.NewSessionManager(0, 0)
 	srv, _ := mcp.BuildServer(pwsh, nil)
 	if err := srv.Run(context.Background(), &mcpapi.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -51,8 +53,16 @@ func runStdioMCPServer() {
 
 // runGUI boots the desktop application.
 func runGUI() {
+	// Only one GUI instance may run; focus the existing window otherwise.
+	if !acquireSingleInstance() {
+		return
+	}
+
 	cfg := config.Load()
-	pwshSvc := session.NewSessionManager()
+	pwshSvc := session.NewSessionManager(
+		cfg.MaxSessions,
+		time.Duration(cfg.IdleTimeoutMinutes)*time.Minute,
+	)
 	winSvc := window.NewWindowManager()
 	mcpSvc := mcp.NewMCPService(cfg)
 

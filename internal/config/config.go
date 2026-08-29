@@ -6,11 +6,35 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // DefaultMCPPort is the TCP port the streamable-HTTP MCP server listens on
 // unless configured otherwise.
 const DefaultMCPPort = 21724
+
+// Defaults for resource-management settings when not present in the config.
+const (
+	// DefaultMCPSessionTimeoutMinutes expires idle MCP client sessions after
+	// one hour, so stale sessions do not pile up after client restarts.
+	DefaultMCPSessionTimeoutMinutes = 60
+	// DefaultMaxSessions caps concurrently running shells.
+	DefaultMaxSessions = 10
+	// DefaultIdleTimeoutMinutes auto-recycles window-less (MCP-created)
+	// sessions that produced no activity for half an hour.
+	DefaultIdleTimeoutMinutes = 30
+)
+
+// fileMu serializes config file IO so concurrent Load/Save calls (e.g. MCP
+// toggle + tab persistence) cannot corrupt the file.
+var fileMu sync.Mutex
+
+// TabPref is the persisted UI state of one terminal tab (sessions themselves
+// are not restored — each tab boots a fresh shell on startup).
+type TabPref struct {
+	Title  string `json:"title"`
+	Accent string `json:"accent"`
+}
 
 // Config holds persisted application settings.
 type Config struct {
@@ -18,12 +42,24 @@ type Config struct {
 	MCPEnabled bool `json:"mcp_enabled"`
 	// MCPPort is the TCP port for the HTTP MCP server.
 	MCPPort int `json:"mcp_port"`
+	// MCPSessionTimeoutMinutes expires idle MCP client sessions.
+	MCPSessionTimeoutMinutes int `json:"mcp_session_timeout_minutes"`
+	// MaxSessions caps the number of concurrently running shells (0 = no cap).
+	MaxSessions int `json:"max_sessions"`
+	// IdleTimeoutMinutes auto-recycles window-less sessions idle this long
+	// (0 = disabled).
+	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
+	// Tabs holds the terminal tab layout (title + accent color per tab).
+	Tabs []TabPref `json:"tabs"`
 }
 
 // Load reads config.json from the user config directory, falling back to
 // defaults (and persisting them) when the file is missing or unreadable.
 func Load() *Config {
-	def := &Config{MCPEnabled: false, MCPPort: DefaultMCPPort}
+	def := Defaults()
+
+	fileMu.Lock()
+	defer fileMu.Unlock()
 
 	path, err := configPath()
 	if err != nil {
@@ -31,21 +67,55 @@ func Load() *Config {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		_ = def.Save() // first run: persist defaults
+		_ = def.saveLocked() // first run: persist defaults
 		return def
 	}
 	cfg := &Config{}
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return def
 	}
-	if cfg.MCPPort <= 0 || cfg.MCPPort > 65535 {
-		cfg.MCPPort = DefaultMCPPort
-	}
+	cfg.sanitize()
 	return cfg
+}
+
+// Defaults returns a Config populated with default values.
+func Defaults() *Config {
+	return &Config{
+		MCPEnabled:               false,
+		MCPPort:                  DefaultMCPPort,
+		MCPSessionTimeoutMinutes: DefaultMCPSessionTimeoutMinutes,
+		MaxSessions:              DefaultMaxSessions,
+		IdleTimeoutMinutes:       DefaultIdleTimeoutMinutes,
+	}
+}
+
+// sanitize repairs out-of-range values with their defaults.
+func (c *Config) sanitize() {
+	if c.MCPPort <= 0 || c.MCPPort > 65535 {
+		c.MCPPort = DefaultMCPPort
+	}
+	if c.MCPSessionTimeoutMinutes < 0 {
+		c.MCPSessionTimeoutMinutes = DefaultMCPSessionTimeoutMinutes
+	}
+	if c.MaxSessions < 0 {
+		c.MaxSessions = DefaultMaxSessions
+	}
+	if c.IdleTimeoutMinutes < 0 {
+		c.IdleTimeoutMinutes = DefaultIdleTimeoutMinutes
+	}
+	if c.Tabs == nil {
+		c.Tabs = []TabPref{}
+	}
 }
 
 // Save persists the config to disk.
 func (c *Config) Save() error {
+	fileMu.Lock()
+	defer fileMu.Unlock()
+	return c.saveLocked()
+}
+
+func (c *Config) saveLocked() error {
 	path, err := configPath()
 	if err != nil {
 		return err

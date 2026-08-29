@@ -27,9 +27,10 @@ type TerminalSession struct {
 	cols int
 	rows int
 
-	mu        sync.Mutex
-	running   bool
-	createdAt time.Time
+	mu         sync.Mutex
+	running    bool
+	createdAt  time.Time
+	lastActive time.Time // last input/output activity, for idle recycling
 
 	buf outputBuffer
 }
@@ -68,12 +69,31 @@ func (s *TerminalSession) isRunning() bool {
 	return s.running
 }
 
+// touch records activity so the idle janitor can tell live sessions apart
+// from abandoned ones.
+func (s *TerminalSession) touch() {
+	s.mu.Lock()
+	s.lastActive = time.Now()
+	s.mu.Unlock()
+}
+
+// idleFor reports how long the session has been silent (input or output).
+func (s *TerminalSession) idleFor() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastActive.IsZero() {
+		return time.Since(s.createdAt)
+	}
+	return time.Since(s.lastActive)
+}
+
 func (s *TerminalSession) writeInput(data string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.running {
 		return fmt.Errorf("session %s is not running", s.ID)
 	}
+	s.lastActive = time.Now()
 	_, err := s.cpty.Write([]byte(data))
 	return err
 }

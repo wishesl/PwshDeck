@@ -91,6 +91,26 @@ pwsh-mcp.exe --mcp
 
 MCP 服务只监听 `127.0.0.1`，不对局域网开放。
 
+> **会话过期**：MCP 客户端会话（`Mcp-Session-Id`）空闲超过 `mcp_session_timeout_minutes`（默认 60）会被服务端回收；pwsh-mcp 重启后旧会话也会失效。客户端收到 `404 session not found` 时应按 MCP 规范重新 `initialize`。
+
+## 配置
+
+所有设置持久化在 `%APPDATA%\pwsh-mcp\config.json`（通过 `config.Load()` 读取，首次运行自动创建默认值）：
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `mcp_enabled` | `false` | 启动时自动开启 HTTP MCP 服务 |
+| `mcp_port` | `21724` | HTTP MCP 端口；被占用时自动向上探测空闲端口 |
+| `mcp_session_timeout_minutes` | `60` | 空闲 MCP 客户端会话回收时间（0 = 不回收） |
+| `max_sessions` | `10` | 并发会话上限（0 = 不限制），超出时 `create_session` 报错 |
+| `idle_timeout_minutes` | `30` | 无窗口（MCP 创建）会话闲置自动回收（0 = 关闭）；GUI 标签页会话不受影响 |
+| `tabs` | `[]` | 终端标签布局（名称 + 颜色），重启后恢复，会话本身不恢复 |
+
+## 其他行为
+
+- **单实例**：GUI 模式只允许一个实例；重复启动会聚焦已运行窗口（stdio `--mcp` 模式不受限）。
+- 关闭最后一个终端标签时不会自动退出应用（至少保留一个标签）。
+
 ## 许可
 
 基于 Wails v3 模板项目，遵循相应开源许可。

@@ -27,7 +27,9 @@ export function Disable(): $CancellablePromise<void> {
 
 /**
  * Enable starts the streamable-HTTP MCP server on the given loopback port and
- * persists the choice. Restarting on a new port is allowed while running.
+ * persists the choice. When the requested port is busy, the next free port up
+ * to portProbeMax away is used instead, so a conflicting process never blocks
+ * the server. Restarting on a new port is allowed while running.
  */
 export function Enable(port: number): $CancellablePromise<void> {
     return $Call.ByID(3902656803, port);
