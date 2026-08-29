@@ -112,22 +112,24 @@ func parseUnicodeEscape(hex string) (rune, bool) {
 var trailingPromptPattern = regexp.MustCompile(`\r?\n?PS [^\r\n]*?>\s*$`)
 
 // stripCommandEcho removes the echoed command line PowerShell renders as the
-// command is typed, so output starts at the command's own result. The echo
-// occupies the first line and may carry trailing whitespace PSReadLine adds for
-// the cursor; multi-line commands are left untouched.
+// command is typed, so output starts at the command's own result. PSReadLine
+// echoes a long command in fragmented pieces plus one full redraw; the full
+// command string only appears in that final redraw, so find its first
+// occurrence and keep everything after it (skipping the trailing whitespace
+// PSReadLine adds for the cursor, then the line terminator). Multi-line
+// commands are left untouched.
 func stripCommandEcho(output, command string) string {
 	command = strings.TrimSpace(command)
 	if command == "" || strings.ContainsAny(command, "\r\n") {
 		return output
 	}
-	end := strings.IndexAny(output, "\r\n")
-	if end < 0 {
+	idx := strings.Index(output, command)
+	if idx < 0 {
 		return output
 	}
-	if strings.TrimSpace(output[:end]) != command {
-		return output
-	}
-	return strings.TrimLeft(output[end:], "\r\n")
+	rest := output[idx+len(command):]
+	rest = strings.TrimLeft(rest, " \t")
+	return strings.TrimLeft(rest, "\r\n")
 }
 
 // stripTrailingPrompt removes the interactive prompt that ends command output.

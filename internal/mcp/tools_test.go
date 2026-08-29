@@ -81,6 +81,7 @@ func TestStripCommandEcho(t *testing.T) {
 		{"echo stripped with CRLF", "Get-Date\r\nTuesday\r\n", "Get-Date", "Tuesday\r\n"},
 		{"echo stripped with LF", "ls\nfile.txt\n", "ls", "file.txt\n"},
 		{"echo with trailing whitespace stripped", "Write-Output hello-mcp  \r\nhello-mcp", "Write-Output hello-mcp", "hello-mcp"},
+		{"fragmented long echo stripped", "echo hello worlecho hello world\r\nresult", "echo hello world", "result"},
 		{"no echo leaves output", "result\r\n", "Get-Date", "result\r\n"},
 		{"multi-line command untouched", "a\r\nb\r\n", "a\nb", "a\r\nb\r\n"},
 		{"empty command untouched", "x\r\n", "", "x\r\n"},
