@@ -19,6 +19,9 @@ type MenuState = {
   y: number;
 };
 
+/** How many tabs stay visible in the tab strip; the rest live in the ⋯ menu. */
+const MAX_VISIBLE_TABS = 5;
+
 let uid = 0;
 const nextTabId = () => `tab-${++uid}`;
 
@@ -35,6 +38,9 @@ export default function App() {
   const [activeId, setActiveId] = useState('');
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
   const tabSeqRef = useRef(1);
 
   // Persist the tab layout (titles + accent colors; sessions are not restored).
@@ -111,15 +117,43 @@ export default function App() {
     persistTabs(next);
   };
 
+  // First MAX_VISIBLE_TABS tabs are shown in the strip; the rest are reachable
+  // through the ⋯ dropdown.
+  const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
+  const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
+
+  const toggleMore = () => {
+    if (!overflowOpen && moreBtnRef.current) {
+      const r = moreBtnRef.current.getBoundingClientRect();
+      setOverflowPos({
+        x: Math.max(4, Math.min(r.left, window.innerWidth - 220)),
+        y: Math.max(4, Math.min(r.bottom + 6, window.innerHeight - 240)),
+      });
+    }
+    setOverflowOpen((o) => !o);
+  };
+
+  // Selecting an overflow tab moves it to the first position and activates it.
+  const selectOverflowTab = (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    const next = [tab, ...tabs.filter((t) => t.id !== id)];
+    setTabs(next);
+    setActiveId(id);
+    persistTabs(next);
+    setOverflowOpen(false);
+  };
+
   const handleReady = (tabId: string, sessionId: string) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
   };
 
-  // Esc closes whichever overlay is open (tab menu or MCP modal).
+  // Esc closes whichever overlay is open (tab menu, overflow menu or MCP modal).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenu(null);
+        setOverflowOpen(false);
         setMcpOpen(false);
       }
     };
@@ -142,7 +176,7 @@ export default function App() {
           pwsh<span className="brand-accent">-mcp</span>
         </div>
         <div className="tab-bar">
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const active = tab.id === activeId;
             return (
               <div
@@ -174,6 +208,17 @@ export default function App() {
               </div>
             );
           })}
+          {overflowTabs.length > 0 && (
+            <button
+              ref={moreBtnRef}
+              type="button"
+              className={`tab-more ${overflowOpen ? 'active' : ''}`}
+              title={`更多标签（${overflowTabs.length}）`}
+              onClick={toggleMore}
+            >
+              ⋯
+            </button>
+          )}
           <button type="button" className="tab-add" title="新建终端" onClick={addTab}>
             ＋
           </button>
@@ -227,6 +272,26 @@ export default function App() {
           </div>
         ))}
       </main>
+
+      {overflowOpen && overflowPos && (
+        <>
+          <div className="tab-more-overlay" onClick={() => setOverflowOpen(false)} />
+          <div className="tab-more-menu" style={{ left: overflowPos.x, top: overflowPos.y }}>
+            {overflowTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab-more-item ${tab.id === activeId ? 'active' : ''}`}
+                style={{ '--tab-accent': tab.accent } as CSSProperties}
+                onClick={() => selectOverflowTab(tab.id)}
+              >
+                <span className="tab-dot" />
+                <span className="tab-more-title">{tab.title}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {menu && menuTab && (
         <TabMenu
