@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,14 +17,36 @@ import (
 // read_output, keeping the tail where fresh output lives.
 const mcpMaxToolOutput = 96 * 1024
 
+// ansiPattern matches ANSI/VT escape sequences in terminal output: CSI
+// (ESC [ ...), OSC (ESC ] ... up to BEL/ST) and single-byte ESC sequences.
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-~]`)
+
+// cleanOutput strips ANSI escape sequences and stray control characters from
+// terminal output, producing plain text for MCP tool results. The GUI stream
+// keeps the raw bytes; only what MCP clients read is cleaned.
+func cleanOutput(s string) string {
+	s = ansiPattern.ReplaceAllString(s, "")
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\r', '\n':
+			return r
+		default:
+			if r < 0x20 || r == 0x7f {
+				return -1 // drop remaining control characters
+			}
+			return r
+		}
+	}, s)
+}
+
 // pwshToolSet is the single source of truth for exposed tool names and
 // descriptions, used both at registration time and by the management UI.
 var pwshToolSet = []ToolInfo{
 	{Name: "list_sessions", Description: "List all pwsh terminal sessions with id, title, host window, size and running state."},
 	{Name: "create_session", Description: "Start a new interactive pwsh session in a ConPTY. Optionally also open a GUI window for it."},
 	{Name: "send_input", Description: "Write raw keystrokes to a session's stdin. Use \\r for Enter; supports escape sequences and Ctrl+C (\\u0003). Output is not returned - use read_output."},
-	{Name: "execute_command", Description: "Run a PowerShell command in a session (Enter appended automatically) and wait for the output to settle before returning the collected output. The session stays interactive - use read_output with since_offset for anything produced later."},
-	{Name: "read_output", Description: "Read output buffered since a byte offset (offset 0 returns recent history). Returns NextOffset to pass back for incremental reads."},
+	{Name: "execute_command", Description: "Run a PowerShell command in a session (Enter appended automatically) and wait for the output to settle before returning the collected output (plain text, ANSI stripped). The session stays interactive - use read_output with since_offset for anything produced later."},
+	{Name: "read_output", Description: "Read output buffered since a byte offset (offset 0 returns recent history) as plain text (ANSI stripped). Returns NextOffset to pass back for incremental reads."},
 	{Name: "stop_session", Description: "Terminate a pwsh session and its ConPTY, then remove it from the session list."},
 	{Name: "resize_session", Description: "Resize a session's pseudo terminal so pwsh reflows its output."},
 	{Name: "list_windows", Description: "List the application's terminal windows."},
@@ -125,7 +148,7 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			return nil, executeOut{
 				SessionID: in.SessionID,
 				Command:   in.Command,
-				Output:    tailOutput(output, mcpMaxToolOutput),
+				Output:    tailOutput(cleanOutput(output), mcpMaxToolOutput),
 				TimedOut:  timedOut,
 			}, nil
 		})
@@ -150,7 +173,7 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			}
 			return nil, readOutputOut{
 				SessionID:  in.SessionID,
-				Output:     tailOutput(string(data), mcpMaxToolOutput),
+				Output:     tailOutput(cleanOutput(string(data)), mcpMaxToolOutput),
 				NextOffset: next,
 				Dropped:    dropped,
 			}, nil
