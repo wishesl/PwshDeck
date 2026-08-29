@@ -22,6 +22,8 @@ body {
   height: 100%;
   width: 100%;
   position: relative;
+  box-sizing: border-box;
+  border-left: 3px solid var(--tab-accent, #4f8cff);
   --wails-draggable: no-drag;
 }
 

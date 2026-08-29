@@ -1,0 +1,80 @@
+/* Tab context menu: rename + accent color picker. */
+
+.tab-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: transparent;
+  --wails-draggable: no-drag;
+}
+
+.tab-menu {
+  position: fixed;
+  z-index: 91;
+  width: 220px;
+  box-sizing: border-box;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(14, 17, 27, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+  --wails-draggable: no-drag;
+}
+
+.tab-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tab-menu-section label {
+  font-size: 11.5px;
+  letter-spacing: 0.4px;
+  color: #9aa0b0;
+}
+
+.tab-menu-section input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  color: #e8eaf0;
+  background: rgba(8, 10, 16, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  outline: none;
+}
+
+.tab-menu-section input:focus {
+  border-color: rgba(122, 162, 247, 0.55);
+}
+
+.tab-colors {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 6px;
+}
+
+.tab-color {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.tab-color:hover {
+  transform: scale(1.15);
+}
+
+.tab-color.selected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}

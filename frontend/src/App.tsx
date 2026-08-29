@@ -1,13 +1,86 @@
-import { useState } from 'react';
-import Terminal from './components/Terminal';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import McpPanel from './components/McpPanel';
-import { WindowManager } from '../bindings/pwsh-mcp/internal/window';
+import TabMenu from './components/TabMenu';
 import './App.css';
 
-type Tab = 'terminal' | 'mcp';
+type Tab = {
+  id: string;
+  title: string;
+  accent: string;
+  sessionId: string | null;
+};
+
+type MenuState = {
+  tabId: string;
+  x: number;
+  y: number;
+};
+
+let uid = 0;
+const nextTabId = () => `tab-${++uid}`;
+
+const initialTab: Tab = {
+  id: nextTabId(),
+  title: '终端1',
+  accent: DEFAULT_ACCENT,
+  sessionId: null,
+};
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('terminal');
+  const [tabs, setTabs] = useState<Tab[]>([initialTab]);
+  const [activeId, setActiveId] = useState(initialTab.id);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const tabSeqRef = useRef(1);
+
+  const addTab = () => {
+    tabSeqRef.current += 1;
+    const tab: Tab = {
+      id: nextTabId(),
+      title: `终端${tabSeqRef.current}`,
+      accent: DEFAULT_ACCENT,
+      sessionId: null,
+    };
+    setTabs((prev) => [...prev, tab]);
+    setActiveId(tab.id);
+  };
+
+  const closeTab = (id: string) => {
+    const idx = tabs.findIndex((t) => t.id === id);
+    if (idx < 0 || tabs.length <= 1) return; // keep at least one tab
+    const next = tabs.filter((t) => t.id !== id);
+    setTabs(next);
+    if (activeId === id) {
+      setActiveId(next[Math.min(idx, next.length - 1)].id);
+    }
+  };
+
+  const renameTab = (id: string, title: string) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+  };
+
+  const setTabAccent = (id: string, accent: string) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, accent } : t)));
+  };
+
+  const handleReady = (tabId: string, sessionId: string) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
+  };
+
+  // Esc closes whichever overlay is open (tab menu or MCP modal).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenu(null);
+        setMcpOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
 
   return (
     <div className="app">
@@ -15,30 +88,94 @@ export default function App() {
         <div className="brand">
           pwsh<span className="brand-accent">-mcp</span>
         </div>
-        <nav className="tabs">
-          <button
-            className={`tab ${tab === 'terminal' ? 'active' : ''}`}
-            onClick={() => setTab('terminal')}
-          >
-            终端
+        <div className="tab-bar">
+          {tabs.map((tab) => {
+            const active = tab.id === activeId;
+            return (
+              <div
+                key={tab.id}
+                className={`tab ${active ? 'active' : ''}`}
+                style={{ '--tab-accent': tab.accent } as CSSProperties}
+                onClick={() => setActiveId(tab.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+                }}
+                title={tab.title}
+              >
+                <span className="tab-dot" />
+                <span className="tab-title">{tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    type="button"
+                    className="tab-close"
+                    title="关闭终端"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button type="button" className="tab-add" title="新建终端" onClick={addTab}>
+            ＋
           </button>
-          <button
-            className={`tab ${tab === 'mcp' ? 'active' : ''}`}
-            onClick={() => setTab('mcp')}
-          >
-            MCP 管理
-          </button>
-        </nav>
+        </div>
         <div className="topbar-spacer" />
-        <button
-          className="new-window-btn"
-          onClick={() => WindowManager.NewWindow().catch(() => {})}
-          title="打开一个新的终端窗口"
-        >
-          ＋ 新窗口
+        <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
+          MCP 管理
         </button>
       </div>
-      <main className="content">{tab === 'terminal' ? <Terminal /> : <McpPanel />}</main>
+
+      <main className="content">
+        {tabs.map((tab) => (
+          <div key={tab.id} className={`terminal-page ${tab.id === activeId ? 'active' : ''}`}>
+            <Terminal
+              accent={tab.accent}
+              active={tab.id === activeId}
+              onReady={(sid) => handleReady(tab.id, sid)}
+            />
+          </div>
+        ))}
+      </main>
+
+      {menu && menuTab && (
+        <TabMenu
+          x={menu.x}
+          y={menu.y}
+          title={menuTab.title}
+          accent={menuTab.accent}
+          onRename={(name) => {
+            renameTab(menu.tabId, name);
+            setMenu(null);
+          }}
+          onAccent={(color) => {
+            setTabAccent(menu.tabId, color);
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      {mcpOpen && (
+        <div className="modal-overlay" onClick={() => setMcpOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>MCP 管理</h2>
+              <button type="button" className="modal-close" title="关闭" onClick={() => setMcpOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <McpPanel />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
