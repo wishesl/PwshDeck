@@ -6,7 +6,7 @@ export {
     MCPService
 };
 
-export {
+export type {
     MCPStatus,
     ToolInfo
 } from "./models.js";

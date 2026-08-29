@@ -6,6 +6,6 @@ export {
     SessionManager
 };
 
-export {
+export type {
     SessionInfo
 } from "./models.js";

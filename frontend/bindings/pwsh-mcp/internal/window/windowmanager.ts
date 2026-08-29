@@ -10,7 +10,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,10 +28,8 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
  * ListWindows returns the application windows created by this service that
  * are still alive, ordered by name.
  */
-export function ListWindows(): $CancellablePromise<$models.WindowInfo[]> {
-    return $Call.ByID(3813580153).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function ListWindows(): $CancellablePromise<$models.WindowInfo[] | null> {
+    return $Call.ByID(3813580153);
 }
 
 /**
@@ -39,12 +37,5 @@ export function ListWindows(): $CancellablePromise<$models.WindowInfo[]> {
  * window closes, sessions bound to it are stopped automatically.
  */
 export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
-    return $Call.ByID(2880287246).then(($result: any) => {
-        return $$createType2($result);
-    });
+    return $Call.ByID(2880287246);
 }
-
-// Private type creation functions
-const $$createType0 = $models.WindowInfo.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Nullable($$createType0);

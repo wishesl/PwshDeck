@@ -6,6 +6,6 @@ export {
     WindowManager
 };
 
-export {
+export type {
     WindowInfo
 } from "./models.js";

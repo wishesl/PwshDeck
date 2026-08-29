@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -28,21 +28,16 @@ export function BindSessionWindow(id: string, windowName: string): $CancellableP
 /**
  * ListSessions returns all sessions, oldest first.
  */
-export function ListSessions(): $CancellablePromise<$models.SessionInfo[]> {
-    return $Call.ByID(2993210509).then(($result: any) => {
-        return $$createType1($result);
-    });
+export function ListSessions(): $CancellablePromise<$models.SessionInfo[] | null> {
+    return $Call.ByID(2993210509);
 }
 
 /**
  * ReadOutput returns output buffered since the given byte offset. Use the
  * returned NextOffset for follow-up calls; offset 0 returns recent history.
  */
-export function ReadOutput(id: string, since: number): $CancellablePromise<[string, number, boolean]> {
-    return $Call.ByID(3812374817, id, since).then(($result: any) => {
-        $result[0] = $Create.ByteSlice($result[0]);
-        return $result;
-    });
+export function ReadOutput(id: string, since: number): $CancellablePromise<[string | null, number, boolean]> {
+    return $Call.ByID(3812374817, id, since);
 }
 
 /**
@@ -66,9 +61,7 @@ export function ShutdownAll(): $CancellablePromise<void> {
  * when that window closes (may be empty for MCP-only sessions).
  */
 export function StartSession(windowName: string): $CancellablePromise<$models.SessionInfo | null> {
-    return $Call.ByID(2696017376, windowName).then(($result: any) => {
-        return $$createType2($result);
-    });
+    return $Call.ByID(2696017376, windowName);
 }
 
 /**
@@ -94,8 +87,3 @@ export function StopSessionsForWindow(windowName: string): $CancellablePromise<v
 export function WriteInput(id: string, data: string): $CancellablePromise<void> {
     return $Call.ByID(3918180837, id, data);
 }
-
-// Private type creation functions
-const $$createType0 = $models.SessionInfo.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Nullable($$createType0);

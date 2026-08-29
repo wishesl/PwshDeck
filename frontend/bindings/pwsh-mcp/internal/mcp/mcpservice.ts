@@ -12,7 +12,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -37,9 +37,7 @@ export function Enable(port: number): $CancellablePromise<void> {
  * GetStatus reports the MCP server state for the management UI.
  */
 export function GetStatus(): $CancellablePromise<$models.MCPStatus> {
-    return $Call.ByID(2433951426).then(($result: any) => {
-        return $$createType0($result);
-    });
+    return $Call.ByID(2433951426);
 }
 
 /**
@@ -48,6 +46,3 @@ export function GetStatus(): $CancellablePromise<$models.MCPStatus> {
 export function Shutdown(): $CancellablePromise<void> {
     return $Call.ByID(20376910);
 }
-
-// Private type creation functions
-const $$createType0 = $models.MCPStatus.createFrom;
