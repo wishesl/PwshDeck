@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { Events, Window } from '@wailsio/runtime';
+import { Clipboard, Events, Window } from '@wailsio/runtime';
 import { SessionManager } from '../../../bindings/pwshdeck/internal/session';
 import './Terminal.css';
 
@@ -48,6 +48,9 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
   const fitRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<Phase>('starting');
+  // Floating copy/paste menu shown while text is selected. Ctrl+C is claimed
+  // by the shell (SIGINT), so a selected-text menu is the ergonomic copy path.
+  const [selMenu, setSelMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Latest props for callbacks without recreating the main effect.
   const accentRef = useRef(accent);
@@ -97,6 +100,22 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     };
     syncSize();
     window.addEventListener('resize', syncSize);
+
+    // Show a small copy/paste menu once the user finishes selecting text,
+    // anchored to the mouse-up position; hide it when the selection clears.
+    const onMouseUp = (e: MouseEvent) => {
+      if (!term.hasSelection()) return;
+      const rect = container.getBoundingClientRect();
+      const menuW = 150;
+      const menuH = 42;
+      const x = Math.max(4, Math.min(e.clientX - rect.left + 12, rect.width - menuW - 4));
+      const y = Math.max(4, Math.min(e.clientY - rect.top + 12, rect.height - menuH - 4));
+      setSelMenu({ x, y });
+    };
+    container.addEventListener('mouseup', onMouseUp);
+    const selDisposable = term.onSelectionChange(() => {
+      if (!term.hasSelection()) setSelMenu(null);
+    });
 
     // Boot the shell bound to this window so closing the window stops it.
     let disposed = false;
@@ -157,6 +176,8 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
       offData();
       offStatus();
       window.removeEventListener('resize', syncSize);
+      container.removeEventListener('mouseup', onMouseUp);
+      selDisposable.dispose();
       const id = sessionIdRef.current;
       if (id) {
         SessionManager.StopSession(id).catch(() => {});
@@ -197,6 +218,28 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     return () => clearTimeout(timer);
   }, [active]);
 
+  const copySelection = () => {
+    const term = termRef.current;
+    if (!term) return;
+    const text = term.getSelection();
+    if (text) {
+      Clipboard.SetText(text).catch(() => {});
+    }
+    term.clearSelection();
+    setSelMenu(null);
+  };
+
+  const pasteClipboard = () => {
+    const term = termRef.current;
+    if (!term) return;
+    Clipboard.Text()
+      .then((text) => {
+        if (text) term.paste(text);
+      })
+      .catch(() => {});
+    setSelMenu(null);
+  };
+
   return (
     <div className="terminal-host" style={{ '--tab-accent': accent } as CSSProperties}>
       {phase !== 'connected' && (
@@ -207,6 +250,17 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
         </div>
       )}
       <div ref={containerRef} className="terminal-xterm" />
+
+      {selMenu && (
+        <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
+          <button type="button" onClick={copySelection}>
+            复制
+          </button>
+          <button type="button" onClick={pasteClipboard}>
+            粘贴
+          </button>
+        </div>
+      )}
     </div>
   );
 }

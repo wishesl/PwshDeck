@@ -92,3 +92,36 @@ body {
   color: var(--danger);
   border-color: rgba(247, 118, 142, 0.4);
 }
+
+/* Floating copy/paste menu shown over selected terminal text. */
+.sel-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  --wails-draggable: no-drag;
+}
+
+.sel-menu button {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.sel-menu button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
