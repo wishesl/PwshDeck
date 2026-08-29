@@ -23,6 +23,7 @@ var (
 	procEnumWindows         = user32.NewProc("EnumWindows")
 	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
 	procIsIconic            = user32.NewProc("IsIconic")
+	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
 	procShowWindow          = user32.NewProc("ShowWindow")
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
 )
@@ -49,32 +50,37 @@ func acquireSingleInstance() bool {
 	return true
 }
 
-// focusExistingWindow brings the running instance's terminal window to the
-// foreground (restoring it first if it is minimized).
+// focusExistingWindow brings the running instance's terminal window(s) to the
+// foreground. A window hidden to the system tray is neither iconic nor
+// visible, so it needs an explicit SW_SHOW before SetForegroundWindow can
+// surface it.
 func focusExistingWindow() {
-	var found uintptr
+	var hwnds []uintptr
 	callback := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
-		if found != 0 {
-			return 0 // stop enumerating
-		}
 		var buf [256]uint16
 		n, _, _ := procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 		title := syscall.UTF16ToString(buf[:n])
 		if strings.Contains(title, "pwsh Terminal") {
-			found = hwnd
-			return 0
+			hwnds = append(hwnds, hwnd)
 		}
-		return 1
+		return 1 // keep enumerating
 	})
 	procEnumWindows.Call(callback, 0)
 
-	if found == 0 {
+	if len(hwnds) == 0 {
 		log.Println("single-instance: another instance is running but its window was not found")
 		return
 	}
-	if iconic, _, _ := procIsIconic.Call(found); iconic != 0 {
-		procShowWindow.Call(found, 9) // SW_RESTORE
+
+	// Restore every matching window: show hidden (tray) ones and un-minimise
+	// iconic ones, then focus the first (primary) window.
+	for _, hwnd := range hwnds {
+		if visible, _, _ := procIsWindowVisible.Call(hwnd); visible == 0 {
+			procShowWindow.Call(hwnd, 5) // SW_SHOW
+		} else if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
+			procShowWindow.Call(hwnd, 9) // SW_RESTORE
+		}
 	}
-	procSetForegroundWindow.Call(found)
+	procSetForegroundWindow.Call(hwnds[0])
 	log.Println("single-instance: focusing the running instance")
 }
