@@ -1,24 +1,82 @@
-/* App shell: translucent glass panel with a slim tool bar on top. */
+/* App shell: translucent glass panel with a slim tool bar on top.
+   Design tokens are defined once on :root and shared by every component
+   stylesheet (Terminal / TabMenu / McpPanel) for a unified look. */
+
+:root {
+  --bg-app-1: rgba(8, 10, 16, 0.82);
+  --bg-app-2: rgba(8, 10, 16, 0.6);
+  --bg-panel: rgba(14, 17, 27, 0.55);
+  --bg-elevated: rgba(12, 15, 24, 0.94);
+  --bg-input: rgba(8, 10, 16, 0.6);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #d4d4d4;
+  --text-strong: #e8eaf0;
+  --text-muted: #9aa0b0;
+  --accent: #7aa2f7;
+  --accent-soft: rgba(122, 162, 247, 0.12);
+  --accent-strong: #c0cffc;
+  --success: #9ece6a;
+  --danger: #f7768e;
+  --warning: #e0af68;
+  --radius: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --shadow-lg: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* ---- Unified scrollbars ------------------------------------------------ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ---- Shell layout ------------------------------------------------------ */
 
 .app {
   height: 100vh;
   width: 100vw;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(8, 10, 16, 0.82) 0%, rgba(8, 10, 16, 0.66) 100%);
-  color: #d4d4d4;
+  background: linear-gradient(180deg, var(--bg-app-1) 0%, var(--bg-app-2) 100%);
+  color: var(--text);
   overflow: hidden;
 }
 
+/* Frameless window: the topbar is the custom title bar. Drag the window from
+   anywhere except interactive controls. */
 .topbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  padding: 0 10px 0 14px;
   height: 44px;
   flex: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 12, 20, 0.55);
+  background: transparent;
   --wails-draggable: drag;
 }
 
@@ -32,12 +90,12 @@
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  color: #7aa2f7;
+  color: var(--accent);
   white-space: nowrap;
 }
 
 .brand-accent {
-  color: #9ece6a;
+  color: var(--success);
 }
 
 /* ---- Terminal tabs ----------------------------------------------------- */
@@ -49,7 +107,6 @@
   min-width: 0;
   flex: 1;
   overflow-x: auto;
-  scrollbar-width: thin;
   padding: 2px 0;
   --wails-draggable: no-drag;
 }
@@ -59,11 +116,11 @@
   align-items: center;
   gap: 7px;
   padding: 5px 8px 5px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
-  color: #9aa0b0;
+  color: var(--text-muted);
   font-size: 12.5px;
   border: 1px solid transparent;
   position: relative;
@@ -75,14 +132,14 @@
 }
 
 .tab:hover {
-  color: #d4d4d4;
+  color: var(--text);
   background: rgba(255, 255, 255, 0.06);
 }
 
 .tab.active {
-  color: #e8eaf0;
+  color: var(--text-strong);
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--border-strong);
 }
 
 .tab.active::before {
@@ -113,7 +170,7 @@
 .tab-close {
   border: none;
   background: transparent;
-  color: #9aa0b0;
+  color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
   padding: 1px 4px;
@@ -123,17 +180,17 @@
 }
 
 .tab-close:hover {
-  color: #f7768e;
+  color: var(--danger);
   background: rgba(247, 118, 142, 0.14);
 }
 
 .tab-add {
   border: 1px dashed rgba(255, 255, 255, 0.2);
   background: transparent;
-  color: #9aa0b0;
+  color: var(--text-muted);
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
@@ -146,9 +203,9 @@
 }
 
 .tab-add:hover {
-  color: #d4d4d4;
+  color: var(--text);
   border-color: rgba(122, 162, 247, 0.5);
-  background: rgba(122, 162, 247, 0.1);
+  background: var(--accent-soft);
 }
 
 .topbar-spacer {
@@ -157,11 +214,11 @@
 
 .mcp-btn {
   border: 1px solid rgba(122, 162, 247, 0.35);
-  background: rgba(122, 162, 247, 0.12);
-  color: #c0cffc;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   font-size: 12.5px;
   padding: 5px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.15s ease;
   white-space: nowrap;
@@ -169,6 +226,41 @@
 
 .mcp-btn:hover {
   background: rgba(122, 162, 247, 0.22);
+}
+
+/* ---- Window caption controls (frameless) ------------------------------- */
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  --wails-draggable: no-drag;
+}
+
+.win-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  width: 36px;
+  height: 30px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.win-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-strong);
+}
+
+.win-btn-close:hover {
+  background: rgba(247, 118, 142, 0.85);
+  color: #fff;
 }
 
 .content {
@@ -207,10 +299,10 @@
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  background: rgba(12, 15, 24, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
@@ -219,29 +311,29 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-head h2 {
   margin: 0;
   font-size: 14.5px;
   font-weight: 600;
-  color: #e8eaf0;
+  color: var(--text-strong);
 }
 
 .modal-close {
   border: none;
   background: transparent;
-  color: #9aa0b0;
+  color: var(--text-muted);
   font-size: 18px;
   line-height: 1;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
 .modal-close:hover {
-  color: #f7768e;
+  color: var(--danger);
   background: rgba(247, 118, 142, 0.12);
 }
 

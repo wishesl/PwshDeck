@@ -195,7 +195,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, onRea
   }, [active]);
 
   return (
-    <div className="terminal" style={{ '--tab-accent': accent } as CSSProperties}>
+    <div className="terminal-host" style={{ '--tab-accent': accent } as CSSProperties}>
       {phase !== 'connected' && (
         <div className={`terminal-badge terminal-badge-${phase}`}>
           {phase === 'starting' && '正在启动 pwsh…'}

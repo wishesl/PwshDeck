@@ -1,6 +1,9 @@
 /* xterm.js host. The ConPTY provides a real interactive shell; xterm.js
    renders its raw ANSI stream. The app shell (App.css) paints the translucent
-   surface; the terminal itself is fully transparent. */
+   surface; the terminal itself is fully transparent.
+   NOTE: the host class is `.terminal-host`, never `.terminal` — xterm.js puts
+   its own `terminal` class on its root element, so a bare `.terminal` rule
+   would leak into the xterm DOM. */
 
 html,
 body {
@@ -18,12 +21,10 @@ body {
   height: 100%;
 }
 
-.terminal {
+.terminal-host {
   height: 100%;
   width: 100%;
   position: relative;
-  box-sizing: border-box;
-  border-left: 3px solid var(--tab-accent, #4f8cff);
   --wails-draggable: no-drag;
 }
 
@@ -43,6 +44,29 @@ body {
   background-color: transparent !important;
 }
 
+/* Slim translucent scrollbar for the terminal viewport. */
+.terminal-xterm .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.26);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-track,
+.terminal-xterm .xterm-viewport::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Session lifecycle badge, floating over the terminal. */
 .terminal-badge {
   position: absolute;
@@ -51,20 +75,20 @@ body {
   z-index: 5;
   font-size: 12px;
   padding: 4px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
   background: rgba(10, 12, 20, 0.72);
-  color: #9aa0b0;
+  color: var(--text-muted);
   pointer-events: none;
 }
 
 .terminal-badge-starting {
-  color: #e0af68;
+  color: var(--warning);
   border-color: rgba(224, 175, 104, 0.4);
 }
 
 .terminal-badge-error,
 .terminal-badge-ended {
-  color: #f7768e;
+  color: var(--danger);
   border-color: rgba(247, 118, 142, 0.4);
 }

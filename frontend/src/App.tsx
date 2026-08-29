@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Window } from '@wailsio/runtime';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import McpPanel from './components/McpPanel';
 import TabMenu from './components/TabMenu';
@@ -84,7 +85,14 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="topbar">
+      <div
+        className="topbar"
+        onDoubleClick={(e) => {
+          const t = e.target as HTMLElement;
+          if (t.closest('button, .tab, .tab-bar')) return;
+          Window.ToggleMaximise().catch(() => {});
+        }}
+      >
         <div className="brand">
           pwsh<span className="brand-accent">-mcp</span>
         </div>
@@ -129,6 +137,38 @@ export default function App() {
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>
+        <div className="window-controls">
+          <button
+            type="button"
+            className="win-btn"
+            title="最小化"
+            onClick={() => Window.Minimise().catch(() => {})}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="0.5" y="4.5" width="9" height="1" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="win-btn"
+            title="最大化 / 还原"
+            onClick={() => Window.ToggleMaximise().catch(() => {})}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="win-btn win-btn-close"
+            title="关闭"
+            onClick={() => Window.Close().catch(() => {})}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <main className="content">

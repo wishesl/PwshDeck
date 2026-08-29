@@ -72,6 +72,7 @@ func (w *WindowManager) NewWindow() (*WindowInfo, error) {
 		Height:           618,
 		MinWidth:         500,
 		MinHeight:        300,
+		Frameless:        true, // custom transparent title bar (webview topbar)
 		BackgroundType:   application.BackgroundTypeTransparent,
 		BackgroundColour: application.RGBA{Red: 8, Green: 10, Blue: 16, Alpha: 140},
 		URL:              "/",
