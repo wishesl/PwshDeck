@@ -1,4 +1,5 @@
-package main
+// Package config persists application settings to the user config directory.
+package config
 
 import (
 	"encoding/json"
@@ -19,9 +20,9 @@ type Config struct {
 	MCPPort int `json:"mcp_port"`
 }
 
-// LoadConfig reads config.json from the user config directory, falling back
-// to defaults (and persisting them) when the file is missing or unreadable.
-func LoadConfig() *Config {
+// Load reads config.json from the user config directory, falling back to
+// defaults (and persisting them) when the file is missing or unreadable.
+func Load() *Config {
 	def := &Config{MCPEnabled: false, MCPPort: DefaultMCPPort}
 
 	path, err := configPath()

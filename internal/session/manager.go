@@ -1,4 +1,4 @@
-package main
+package session
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,9 +63,10 @@ func NewSessionManager() *SessionManager {
 	return &SessionManager{sessions: make(map[string]*TerminalSession)}
 }
 
-// init binds the Wails app to the service. Unexported so Wails3 does not
-// expose it (and its *application.App param) as a frontend binding.
-func (s *SessionManager) init(app *application.App) {
+// Init binds the Wails app to the service. Excluded from frontend bindings.
+//
+//wails:ignore
+func (s *SessionManager) Init(app *application.App) {
 	s.app = app
 }
 
@@ -243,10 +243,12 @@ func (s *SessionManager) getSession(id string) *TerminalSession {
 	return sess
 }
 
-// executeCommand writes command followed by Enter, then waits for output to
+// ExecuteCommand writes command followed by Enter, then waits for output to
 // settle (a short quiet period) or until the timeout expires, and returns the
-// output produced since the command was sent.
-func (s *SessionManager) executeCommand(id, command string, timeout time.Duration) (string, bool, error) {
+// output produced since the command was sent. Excluded from frontend bindings.
+//
+//wails:ignore
+func (s *SessionManager) ExecuteCommand(id, command string, timeout time.Duration) (string, bool, error) {
 	sess := s.getSession(id)
 	if !sess.isRunning() {
 		return "", false, fmt.Errorf("session %q is not running", id)
@@ -319,13 +321,4 @@ func (s *SessionManager) emitStatus(sess *TerminalSession, status string) {
 	if s.app != nil {
 		s.app.Event.Emit(EventStatus, termEvent{ID: sess.ID, Data: status})
 	}
-}
-
-// tailOutput trims a chunk of collected output to a sane length for tool
-// results, keeping the tail (fresh output matters more than early noise).
-func tailOutput(s string, limit int) string {
-	if limit <= 0 || len(s) <= limit {
-		return strings.TrimRight(s, "\r\n")
-	}
-	return strings.TrimRight(s[len(s)-limit:], "\r\n")
 }

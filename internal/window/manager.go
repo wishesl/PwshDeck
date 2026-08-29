@@ -1,4 +1,5 @@
-package main
+// Package window creates and tracks the application's terminal windows.
+package window
 
 import (
 	"fmt"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+
+	"pwsh-mcp/internal/session"
 )
 
 // WindowInfo is the wire-safe view of an application window.
@@ -23,7 +26,7 @@ type WindowInfo struct {
 //go:generate wails3 generate bindings
 type WindowManager struct {
 	app  *application.App
-	pwsh *SessionManager
+	pwsh *session.SessionManager
 
 	mu      sync.Mutex
 	counter int
@@ -36,9 +39,11 @@ func NewWindowManager() *WindowManager {
 	return &WindowManager{titles: make(map[string]string)}
 }
 
-// init binds the Wails app and the session manager to the service.
-// Unexported so Wails3 does not expose cross-service type references.
-func (w *WindowManager) init(app *application.App, pwsh *SessionManager) {
+// Init binds the Wails app and the session manager to the service.
+// Excluded from frontend bindings.
+//
+//wails:ignore
+func (w *WindowManager) Init(app *application.App, pwsh *session.SessionManager) {
 	w.app = app
 	w.pwsh = pwsh
 }

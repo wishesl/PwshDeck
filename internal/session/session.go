@@ -1,4 +1,7 @@
-package main
+// Package session manages interactive pwsh processes running inside Windows
+// ConPTYs, so shells behave exactly like a real terminal (Tab completion,
+// PSReadLine, progress bars, Ctrl+C, ...).
+package session
 
 import (
 	"crypto/rand"

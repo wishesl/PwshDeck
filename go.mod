@@ -1,4 +1,4 @@
-module changeme
+module pwsh-mcp
 
 go 1.25.0
 

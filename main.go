@@ -6,8 +6,13 @@ import (
 	"flag"
 	"log"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpapi "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"pwsh-mcp/internal/config"
+	"pwsh-mcp/internal/mcp"
+	"pwsh-mcp/internal/session"
+	"pwsh-mcp/internal/window"
 )
 
 // Wails uses Go's `embed` package to embed the frontend files into the binary.
@@ -37,19 +42,19 @@ func main() {
 // runStdioMCPServer serves the pwsh-management tools over stdin/stdout without
 // any GUI. Sessions created here are window-less invisible shells.
 func runStdioMCPServer() {
-	pwsh := NewSessionManager()
-	srv, _ := buildMCPServer(pwsh, nil)
-	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+	pwsh := session.NewSessionManager()
+	srv, _ := mcp.BuildServer(pwsh, nil)
+	if err := srv.Run(context.Background(), &mcpapi.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
 }
 
 // runGUI boots the desktop application.
 func runGUI() {
-	cfg := LoadConfig()
-	pwshSvc := NewSessionManager()
-	winSvc := NewWindowManager()
-	mcpSvc := NewMCPService(cfg)
+	cfg := config.Load()
+	pwshSvc := session.NewSessionManager()
+	winSvc := window.NewWindowManager()
+	mcpSvc := mcp.NewMCPService(cfg)
 
 	// Create a new Wails application by providing the necessary options.
 	// 'Assets' configures the asset server with the 'FS' variable pointing to
@@ -70,9 +75,9 @@ func runGUI() {
 		},
 	})
 
-	pwshSvc.init(app)
-	winSvc.init(app, pwshSvc)
-	mcpSvc.init(app, pwshSvc, winSvc)
+	pwshSvc.Init(app)
+	winSvc.Init(app, pwshSvc)
+	mcpSvc.Init(app, pwshSvc, winSvc)
 
 	// Close every shell when the application exits.
 	app.OnShutdown(func() {

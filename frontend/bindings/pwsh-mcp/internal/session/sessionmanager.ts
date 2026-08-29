@@ -11,7 +11,7 @@
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wailsio/runtime";
+import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -22,22 +22,27 @@ import * as $models from "./models.js";
  * that window stops the session.
  */
 export function BindSessionWindow(id: string, windowName: string): $CancellablePromise<void> {
-    return $Call.ByID(3707094274, id, windowName);
+    return $Call.ByID(25511881, id, windowName);
 }
 
 /**
  * ListSessions returns all sessions, oldest first.
  */
-export function ListSessions(): $CancellablePromise<$models.SessionInfo[] | null> {
-    return $Call.ByID(918597220);
+export function ListSessions(): $CancellablePromise<$models.SessionInfo[]> {
+    return $Call.ByID(2993210509).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
 
 /**
  * ReadOutput returns output buffered since the given byte offset. Use the
  * returned NextOffset for follow-up calls; offset 0 returns recent history.
  */
-export function ReadOutput(id: string, since: number): $CancellablePromise<[string | null, number, boolean]> {
-    return $Call.ByID(3125522248, id, since);
+export function ReadOutput(id: string, since: number): $CancellablePromise<[string, number, boolean]> {
+    return $Call.ByID(3812374817, id, since).then(($result: any) => {
+        $result[0] = $Create.ByteSlice($result[0]);
+        return $result;
+    });
 }
 
 /**
@@ -45,14 +50,14 @@ export function ReadOutput(id: string, since: number): $CancellablePromise<[stri
  * its layout. Called by the frontend whenever xterm.js is resized.
  */
 export function Resize(id: string, cols: number, rows: number): $CancellablePromise<void> {
-    return $Call.ByID(3611302045, id, cols, rows);
+    return $Call.ByID(2966515760, id, cols, rows);
 }
 
 /**
  * ShutdownAll closes every session; used on application exit.
  */
 export function ShutdownAll(): $CancellablePromise<void> {
-    return $Call.ByID(3914297314);
+    return $Call.ByID(244979753);
 }
 
 /**
@@ -61,14 +66,16 @@ export function ShutdownAll(): $CancellablePromise<void> {
  * when that window closes (may be empty for MCP-only sessions).
  */
 export function StartSession(windowName: string): $CancellablePromise<$models.SessionInfo | null> {
-    return $Call.ByID(2367563357, windowName);
+    return $Call.ByID(2696017376, windowName).then(($result: any) => {
+        return $$createType2($result);
+    });
 }
 
 /**
  * StopSession terminates a session's ConPTY and shell, then forgets it.
  */
 export function StopSession(id: string): $CancellablePromise<void> {
-    return $Call.ByID(3092503875, id);
+    return $Call.ByID(1653264108, id);
 }
 
 /**
@@ -76,7 +83,7 @@ export function StopSession(id: string): $CancellablePromise<void> {
  * Called when a window closes so its shell does not leak.
  */
 export function StopSessionsForWindow(windowName: string): $CancellablePromise<void> {
-    return $Call.ByID(4293342559, windowName);
+    return $Call.ByID(3738234052, windowName);
 }
 
 /**
@@ -85,5 +92,10 @@ export function StopSessionsForWindow(windowName: string): $CancellablePromise<v
  * onData callback, and we pass it through untouched.
  */
 export function WriteInput(id: string, data: string): $CancellablePromise<void> {
-    return $Call.ByID(3782480956, id, data);
+    return $Call.ByID(3918180837, id, data);
 }
+
+// Private type creation functions
+const $$createType0 = $models.SessionInfo.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Nullable($$createType0);

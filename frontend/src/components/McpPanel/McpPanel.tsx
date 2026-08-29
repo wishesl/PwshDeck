@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { MCPService } from '../../../bindings/changeme';
-import type { MCPStatus } from '../../../bindings/changeme';
+import { MCPService } from '../../../bindings/pwsh-mcp/internal/mcp';
+import type { MCPStatus } from '../../../bindings/pwsh-mcp/internal/mcp';
 import './McpPanel.css';
 
 export default function McpPanel() {

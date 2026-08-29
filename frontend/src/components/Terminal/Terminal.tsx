@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { Events, Window } from '@wailsio/runtime';
-import { SessionManager } from '../../../bindings/changeme';
+import { SessionManager } from '../../../bindings/pwsh-mcp/internal/session';
 import './Terminal.css';
 
 type Phase = 'starting' | 'connected' | 'ended' | 'error';

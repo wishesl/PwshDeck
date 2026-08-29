@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Terminal from './components/Terminal';
 import McpPanel from './components/McpPanel';
-import { WindowManager } from '../bindings/changeme';
+import { WindowManager } from '../bindings/pwsh-mcp/internal/window';
 import './App.css';
 
 type Tab = 'terminal' | 'mcp';
