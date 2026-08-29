@@ -144,7 +144,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     const offStatus = Events.On('term_status', (event: any) => {
       const payload = event?.data;
       if (payload && sessionIdRef.current && payload.id === sessionIdRef.current) {
-        if (payload.status === 'disconnected') {
+        if (payload.data === 'disconnected') {
           term.write('\r\n\x1b[90m[pwsh 会话已结束]\x1b[0m\r\n');
           setPhase('ended');
         }

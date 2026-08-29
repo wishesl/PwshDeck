@@ -110,6 +110,9 @@ func (s *TerminalSession) setPwd(pwd string) {
 var oscCwdPattern = regexp.MustCompile(`\x1b\]9;9;"([^"]*)"(?:\x07|\x1b\\)`)
 
 // oscCarryBytes caps how much recent output is remembered across read chunks.
+// 1024 comfortably exceeds the Windows MAX_PATH (260), so a cwd report split
+// across reads is never truncated; only a path longer than ~1 KiB (with
+// long-path support enabled) could lose a single report.
 const oscCarryBytes = 1024
 
 // consumeCwdReport scans a chunk of ConPTY output for OSC 9;9 cwd reports and

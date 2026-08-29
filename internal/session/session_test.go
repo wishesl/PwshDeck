@@ -91,6 +91,10 @@ func TestResolveWorkDir(t *testing.T) {
 	home := t.TempDir()
 	existing := t.TempDir()
 	missing := filepath.Join(t.TempDir(), "nope")
+	cwd, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve cwd: %v", err)
+	}
 
 	tests := []struct {
 		name string
@@ -100,6 +104,7 @@ func TestResolveWorkDir(t *testing.T) {
 		{name: "empty falls back to home", in: "", want: home},
 		{name: "existing directory kept", in: existing, want: existing},
 		{name: "missing directory falls back to home", in: missing, want: home},
+		{name: "relative path resolved to absolute", in: ".", want: cwd},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

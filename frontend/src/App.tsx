@@ -65,17 +65,16 @@ export default function App() {
     const off = Events.On('term_pwd', (event: any) => {
       const payload = event?.data;
       if (!payload || typeof payload.id !== 'string' || typeof payload.data !== 'string') return;
-      setTabs((prev) => {
-        let changed = false;
-        const next = prev.map((t) => {
-          if (t.sessionId === payload.id && t.pwd !== payload.data) {
-            changed = true;
-            return { ...t, pwd: payload.data };
-          }
-          return t;
-        });
-        return changed ? next : prev;
-      });
+      // The prompt hook reports the pwd on every prompt (even after a bare
+      // Enter), so skip when it is unchanged — otherwise every command would
+      // schedule a config write.
+      const current = tabsRef.current.find((t) => t.sessionId === payload.id);
+      if (current && current.pwd === payload.data) return;
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.sessionId === payload.id && t.pwd !== payload.data ? { ...t, pwd: payload.data } : t
+        )
+      );
       if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
       pwdTimerRef.current = window.setTimeout(() => {
         persistTabs(tabsRef.current);
