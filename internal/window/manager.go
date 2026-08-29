@@ -20,6 +20,12 @@ type WindowInfo struct {
 	Title string `json:"title"`
 }
 
+// EventCloseRequested is emitted to a window when the OS asks it to close
+// (Alt+F4, taskbar "Close window"), so the frontend can ask the user whether
+// to hide the app to the system tray or quit. The custom close button in the
+// top bar shows the same dialog directly.
+const EventCloseRequested = "window-close-requested"
+
 // WindowManager creates and tracks terminal windows. Every window loads the
 // same frontend, which then starts (or attaches) a pwsh session bound to the
 // window name.
@@ -28,6 +34,10 @@ type WindowInfo struct {
 type WindowManager struct {
 	app  *application.App
 	pwsh *session.SessionManager
+
+	tray    *application.SystemTray // created lazily with the first window
+	icon    []byte                  // tray icon bytes (PNG), set from main
+	primary string                  // window name attached to the tray
 
 	mu      sync.Mutex
 	counter int
@@ -47,6 +57,14 @@ func NewWindowManager() *WindowManager {
 func (w *WindowManager) Init(app *application.App, pwsh *session.SessionManager) {
 	w.app = app
 	w.pwsh = pwsh
+}
+
+// SetTrayIcon stores the PNG bytes used for the system tray icon. Call it once
+// before the first window is created. Excluded from frontend bindings.
+//
+//wails:ignore
+func (w *WindowManager) SetTrayIcon(icon []byte) {
+	w.icon = icon
 }
 
 // NewWindow opens a new terminal window and returns its identity. When the
@@ -82,13 +100,20 @@ func (w *WindowManager) NewWindow() (*WindowInfo, error) {
 		return nil, fmt.Errorf("failed to create window %q", name)
 	}
 
-	// Clean up bound sessions when the window goes away. WM_CLOSE emits the
-	// platform event; Close() emits the common one — cover both.
-	cleanup := func(*application.WindowEvent) {
+	// Stop sessions bound to this window only when it truly closes. A native
+	// close request (WM_CLOSE → events.Windows.WindowClosing) is intercepted
+	// and turned into a "hide to tray vs quit" prompt instead, so it must NOT
+	// tear down sessions here — that happens on the real close
+	// (events.Common.WindowClosing) below.
+	win.OnWindowEvent(events.Windows.WindowClosing, func(*application.WindowEvent) {
+		win.EmitEvent(EventCloseRequested)
+	})
+	win.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
 		w.pwsh.StopSessionsForWindow(name)
-	}
-	win.OnWindowEvent(events.Windows.WindowClosing, cleanup)
-	win.OnWindowEvent(events.Common.WindowClosing, cleanup)
+	})
+
+	// First window carries the system tray; subsequent windows just reuse it.
+	w.ensureTray(win)
 
 	log.Printf("window %s created", name)
 	return &WindowInfo{Name: name, Title: title}, nil
@@ -146,4 +171,75 @@ func (w *WindowManager) SetTabPrefs(prefs []config.TabPref) error {
 	cfg := config.Load()
 	cfg.Tabs = prefs
 	return cfg.Save()
+}
+
+// HideToTray hides every window but keeps the app (sessions + MCP server)
+// running in the background. The user restores it from the system tray icon.
+func (w *WindowManager) HideToTray() error {
+	if w.app == nil {
+		return fmt.Errorf("service not initialized: app is nil")
+	}
+	for _, win := range w.app.Window.GetAll() {
+		win.Hide()
+	}
+	return nil
+}
+
+// ShowFromTray restores all windows and brings the primary one to the front.
+func (w *WindowManager) ShowFromTray() {
+	if w.app == nil {
+		return
+	}
+	for _, win := range w.app.Window.GetAll() {
+		win.Show()
+	}
+	if w.primary != "" {
+		if win, ok := w.app.Window.GetByName(w.primary); ok {
+			win.Show().Focus()
+		}
+	}
+}
+
+// QuitApp exits the whole application (all windows, sessions and the MCP
+// server). Used by the close dialog and the tray menu.
+func (w *WindowManager) QuitApp() {
+	if w.app != nil {
+		w.app.Quit()
+	}
+}
+
+// ensureTray creates the system tray icon on the first window. It is called
+// before app.Run(), so New() defers the actual Run() until startup; the icon,
+// tooltip, menu and click handler are stored on the tray and picked up then.
+func (w *WindowManager) ensureTray(win *application.WebviewWindow) {
+	if w.app == nil || w.tray != nil {
+		return
+	}
+	w.primary = win.Name()
+
+	tray := w.app.SystemTray.New()
+	tray.SetTooltip("pwsh-mcp")
+	if w.icon != nil {
+		tray.SetIcon(w.icon)
+	}
+	tray.SetMenu(w.trayMenu())
+	// Left-click restores the window(s); right-click opens the menu.
+	tray.OnClick(func() { w.ShowFromTray() })
+	tray.AttachWindow(win)
+	w.tray = tray
+
+	log.Printf("system tray created")
+}
+
+// trayMenu builds the right-click menu for the tray icon.
+func (w *WindowManager) trayMenu() *application.Menu {
+	m := application.NewMenu()
+	m.Add("显示 pwsh-mcp").OnClick(func(*application.Context) {
+		w.ShowFromTray()
+	})
+	m.AddSeparator()
+	m.Add("退出").OnClick(func(*application.Context) {
+		w.QuitApp()
+	})
+	return m
 }

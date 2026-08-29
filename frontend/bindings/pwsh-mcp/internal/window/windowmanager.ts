@@ -37,6 +37,14 @@ export function GetTabPrefs(): $CancellablePromise<config$0.TabPref[] | null> {
 }
 
 /**
+ * HideToTray hides every window but keeps the app (sessions + MCP server)
+ * running in the background. The user restores it from the system tray icon.
+ */
+export function HideToTray(): $CancellablePromise<void> {
+    return $Call.ByID(3083092165);
+}
+
+/**
  * ListWindows returns the application windows created by this service that
  * are still alive, ordered by name.
  */
@@ -53,9 +61,24 @@ export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
 }
 
 /**
+ * QuitApp exits the whole application (all windows, sessions and the MCP
+ * server). Used by the close dialog and the tray menu.
+ */
+export function QuitApp(): $CancellablePromise<void> {
+    return $Call.ByID(423860886);
+}
+
+/**
  * SetTabPrefs persists the terminal tab layout so it is restored on the next
  * launch.
  */
 export function SetTabPrefs(prefs: config$0.TabPref[] | null): $CancellablePromise<void> {
     return $Call.ByID(4210434159, prefs);
+}
+
+/**
+ * ShowFromTray restores all windows and brings the primary one to the front.
+ */
+export function ShowFromTray(): $CancellablePromise<void> {
+    return $Call.ByID(1472431269);
 }

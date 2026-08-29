@@ -24,6 +24,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var appIcon []byte
+
 // main supports two modes:
 //   - default: the GUI terminal app; optionally serves MCP over HTTP on
 //     127.0.0.1 so local AI clients can manage pwsh sessions.
@@ -89,6 +92,9 @@ func runGUI() {
 	pwshSvc.Init(app)
 	winSvc.Init(app, pwshSvc)
 	mcpSvc.Init(app, pwshSvc, winSvc)
+
+	// The system tray icon is created together with the first window.
+	winSvc.SetTrayIcon(appIcon)
 
 	// Close every shell when the application exits.
 	app.OnShutdown(func() {

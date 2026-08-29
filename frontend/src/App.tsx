@@ -51,6 +51,57 @@ export default function App() {
     tabsRef.current = tabs;
   }, [tabs]);
 
+  // ---- Close-to-tray vs exit prompt -------------------------------------
+  const [closePromptOpen, setClosePromptOpen] = useState(false);
+  const [dontAskAgain, setDontAskAgain] = useState(false);
+  // In-memory only: remembering a choice lasts for this launch (the webview
+  // lives as long as the app) and the prompt returns on the next launch.
+  const rememberedCloseAction = useRef<'tray' | 'exit' | null>(null);
+  const windowNameRef = useRef('');
+  const closeActionRef = useRef<() => void>(() => {});
+
+  const hideToTray = () => {
+    setClosePromptOpen(false);
+    WindowManager.HideToTray().catch(() => {});
+  };
+
+  const quitApp = () => {
+    setClosePromptOpen(false);
+    WindowManager.QuitApp().catch(() => {});
+  };
+
+  // Resolves a close request: applies the remembered choice for this launch,
+  // otherwise opens the tray-vs-exit prompt.
+  const applyCloseAction = () => {
+    const remembered = rememberedCloseAction.current;
+    if (remembered === 'tray') hideToTray();
+    else if (remembered === 'exit') quitApp();
+    else {
+      setDontAskAgain(false);
+      setClosePromptOpen(true);
+    }
+  };
+  closeActionRef.current = applyCloseAction;
+
+  // The frameless close button calls applyCloseAction directly; native closes
+  // (Alt+F4, taskbar "Close window") arrive as a window-close-requested event
+  // scoped to this window by its name.
+  useEffect(() => {
+    (async () => {
+      try {
+        windowNameRef.current = await Window.Name();
+      } catch {
+        /* browser dev: no window identity */
+      }
+    })();
+    const off = Events.On('window-close-requested', (event: any) => {
+      const sender = event?.sender;
+      if (windowNameRef.current && sender && sender !== windowNameRef.current) return;
+      closeActionRef.current();
+    });
+    return off;
+  }, []);
+
   // Persist the tab layout (titles + accent colors + last working directory;
   // sessions themselves are not restored).
   const persistTabs = (list: Tab[]) => {
@@ -295,7 +346,7 @@ export default function App() {
             type="button"
             className="win-btn win-btn-close"
             title="关闭"
-            onClick={() => Window.Close().catch(() => {})}
+            onClick={() => closeActionRef.current()}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
               <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1" />
@@ -353,6 +404,49 @@ export default function App() {
           }}
           onClose={() => setMenu(null)}
         />
+      )}
+
+      {closePromptOpen && (
+        <div className="modal-overlay" onClick={() => setClosePromptOpen(false)}>
+          <div className="modal close-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>关闭窗口</h2>
+            </div>
+            <div className="close-dialog-body">
+              <p className="close-dialog-text">要最小化到系统托盘，还是直接退出？</p>
+              <div className="close-dialog-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    if (dontAskAgain) rememberedCloseAction.current = 'tray';
+                    hideToTray();
+                  }}
+                >
+                  最小化到系统托盘
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => {
+                    if (dontAskAgain) rememberedCloseAction.current = 'exit';
+                    quitApp();
+                  }}
+                >
+                  直接退出
+                </button>
+              </div>
+              <label className="close-dialog-remember">
+                <input
+                  type="checkbox"
+                  checked={dontAskAgain}
+                  onChange={(e) => setDontAskAgain(e.target.checked)}
+                />
+                本次启动不再提示
+              </label>
+            </div>
+          </div>
+        </div>
       )}
 
       {mcpOpen && (
