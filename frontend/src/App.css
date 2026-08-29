@@ -108,7 +108,9 @@
   flex: 1;
   overflow-x: auto;
   padding: 2px 0;
-  --wails-draggable: no-drag;
+  /* No explicit draggable value: inherits `drag` from .topbar so the empty
+     space in the tab strip also drags the window; only the tabs themselves
+     and buttons opt out via `no-drag`. */
 }
 
 .tab {
@@ -296,6 +298,10 @@
 
 .modal {
   width: min(680px, calc(100vw - 48px));
+  /* Definite height so the flex chain modal -> modal-body -> mcp-panel can
+     resolve and scroll; without it the panel's height:100% degenerates to
+     auto and the overflow gets clipped instead of scrolling. */
+  height: min(680px, calc(100vh - 80px));
   max-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;

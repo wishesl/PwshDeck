@@ -85,14 +85,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <div
-        className="topbar"
-        onDoubleClick={(e) => {
-          const t = e.target as HTMLElement;
-          if (t.closest('button, .tab, .tab-bar')) return;
-          Window.ToggleMaximise().catch(() => {});
-        }}
-      >
+      <div className="topbar">
         <div className="brand">
           pwsh<span className="brand-accent">-mcp</span>
         </div>
