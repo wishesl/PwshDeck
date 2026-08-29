@@ -142,6 +142,12 @@ func (s *SessionManager) StartSession(windowName, workDir string) (*SessionInfo,
 	s.counter++
 	n := s.counter
 	id := newSessionID()
+	for {
+		if _, exists := s.sessions[id]; !exists {
+			break
+		}
+		id = newSessionID() // collision (astronomically unlikely): retry
+	}
 	title := fmt.Sprintf("pwsh #%d", n)
 
 	home, err := os.UserHomeDir()
@@ -355,9 +361,11 @@ func (s *SessionManager) getSession(id string) *TerminalSession {
 	return sess
 }
 
-// ExecuteCommand writes command followed by Enter, then waits for output to
-// settle (a short quiet period) or until the timeout expires, and returns the
-// output produced since the command was sent. Excluded from frontend bindings.
+// ExecuteCommand writes command followed by Enter, then waits until the shell
+// returns to its prompt (the prompt hook's OSC 9;9 report) or the timeout
+// expires, and returns the output produced since the command was sent. When no
+// prompt has ever been observed (hook missing), it falls back to a short quiet
+// period. Excluded from frontend bindings.
 //
 //wails:ignore
 func (s *SessionManager) ExecuteCommand(id, command string, timeout time.Duration) (string, bool, error) {
@@ -372,24 +380,44 @@ func (s *SessionManager) ExecuteCommand(id, command string, timeout time.Duratio
 		timeout = executeMaxTO
 	}
 
+	// Serialize per session: MCP clients may issue parallel tool calls, and two
+	// concurrent commands on one shell would interleave keystrokes and read
+	// back overlapping output.
+	sess.cmdMu.Lock()
+	defer sess.cmdMu.Unlock()
+	if !sess.isRunning() {
+		return "", false, fmt.Errorf("session %q is not running", id)
+	}
+
 	startSeq := sess.buf.lastSeq()
+	promptMark := sess.promptMark()
 	if err := sess.writeInput(command + "\r"); err != nil {
 		return "", false, err
 	}
 
+	usePrompt := promptMark > 0
 	deadline := time.Now().Add(timeout)
 	var act time.Time
+	finished := false
 	for {
 		time.Sleep(executeTick)
-		act = sess.buf.lastActivity()
-		if !act.IsZero() && time.Since(act) >= executeQuiet {
-			break
+		if usePrompt {
+			if sess.promptMark() > promptMark {
+				finished = true
+				break
+			}
+		} else {
+			act = sess.buf.lastActivity()
+			if !act.IsZero() && time.Since(act) >= executeQuiet {
+				finished = true
+				break
+			}
 		}
 		if time.Now().After(deadline) {
 			break
 		}
 	}
-	timedOut := act.IsZero() || time.Since(act) < executeQuiet
+	timedOut := !finished
 	data, _, _ := sess.buf.since(startSeq)
 	return string(data), timedOut, nil
 }
@@ -403,7 +431,7 @@ func (s *SessionManager) readLoop(sess *TerminalSession) {
 			chunk := buf[:n]
 			sess.buf.write(chunk)
 			if pwd := sess.consumeCwdReport(chunk); pwd != "" {
-				sess.setPwd(pwd)
+				sess.notePrompt(pwd)
 				s.emitPwd(sess, pwd)
 			}
 			sess.touch() // output counts as activity for idle recycling

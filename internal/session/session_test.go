@@ -162,3 +162,46 @@ func TestPromptHookReportsCwd(t *testing.T) {
 	}
 	t.Fatalf("timed out waiting for OSC 9;9 cwd report; output so far: %q", out.String())
 }
+
+// TestExecuteCommandCompletion boots a real pwsh and verifies ExecuteCommand
+// uses the prompt hook's OSC 9;9 report to detect completion: a fast command
+// returns without timing out, and a long-running command is reported as timed
+// out instead of falsely completing during the quiet period.
+func TestExecuteCommandCompletion(t *testing.T) {
+	if !conpty.IsConPtyAvailable() {
+		t.Skip("ConPTY not available")
+	}
+	if _, err := exec.LookPath("pwsh.exe"); err != nil {
+		t.Skip("pwsh.exe not found on PATH")
+	}
+
+	mgr := NewSessionManager(0, 0)
+	defer mgr.ShutdownAll()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		dir = t.TempDir()
+	}
+	info, err := mgr.StartSession("", dir)
+	if err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+
+	out, timedOut, err := mgr.ExecuteCommand(info.ID, "Write-Output 'hello-mcp'", 0)
+	if err != nil {
+		t.Fatalf("execute fast command: %v", err)
+	}
+	if timedOut {
+		t.Fatalf("fast command reported timed out; output: %q", out)
+	}
+	if !strings.Contains(out, "hello-mcp") {
+		t.Fatalf("fast command output missing result: %q", out)
+	}
+
+	out, timedOut, err = mgr.ExecuteCommand(info.ID, "Start-Sleep 5", time.Second)
+	if err != nil {
+		t.Fatalf("execute long command: %v", err)
+	}
+	if !timedOut {
+		t.Fatalf("long command should have timed out; output: %q", out)
+	}
+}

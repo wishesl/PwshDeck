@@ -39,18 +39,113 @@ func cleanOutput(s string) string {
 	}, s)
 }
 
+// decodeInput expands the escape sequences send_input documents (\r, \n, \t,
+// \\ and \uXXXX) into their raw byte values, so a client can send Enter ("\r")
+// or Ctrl+C ("\u0003") as plain text. Unknown escapes pass through literally.
+func decodeInput(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		switch s[i+1] {
+		case 'r':
+			b.WriteByte('\r')
+			i += 2
+		case 'n':
+			b.WriteByte('\n')
+			i += 2
+		case 't':
+			b.WriteByte('\t')
+			i += 2
+		case '\\':
+			b.WriteByte('\\')
+			i += 2
+		case 'u':
+			if i+6 <= len(s) {
+				if r, ok := parseUnicodeEscape(s[i+2 : i+6]); ok {
+					b.WriteRune(r)
+					i += 6
+					continue
+				}
+			}
+			b.WriteByte(s[i])
+			i++
+		default:
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
+}
+
+// parseUnicodeEscape parses four hex digits into a rune.
+func parseUnicodeEscape(hex string) (rune, bool) {
+	var v rune
+	for _, c := range hex {
+		var d rune
+		switch {
+		case c >= '0' && c <= '9':
+			d = c - '0'
+		case c >= 'a' && c <= 'f':
+			d = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			d = c - 'A' + 10
+		default:
+			return 0, false
+		}
+		v = v*16 + d
+	}
+	return v, true
+}
+
+// trailingPromptPattern matches the interactive prompt that ends command
+// output — "PS <location>> " possibly nested ("PS C:\dir>> ") — after
+// cleanOutput has removed the OSC 9;9 report and any ANSI escapes. The prompt
+// is stripped so tool results carry only the command's own output.
+var trailingPromptPattern = regexp.MustCompile(`\r?\n?PS [^\r\n]*?>\s*$`)
+
+// stripCommandEcho removes the echoed command line PowerShell renders as the
+// command is typed, so output starts at the command's own result. The echo
+// occupies the first line and may carry trailing whitespace PSReadLine adds for
+// the cursor; multi-line commands are left untouched.
+func stripCommandEcho(output, command string) string {
+	command = strings.TrimSpace(command)
+	if command == "" || strings.ContainsAny(command, "\r\n") {
+		return output
+	}
+	end := strings.IndexAny(output, "\r\n")
+	if end < 0 {
+		return output
+	}
+	if strings.TrimSpace(output[:end]) != command {
+		return output
+	}
+	return strings.TrimLeft(output[end:], "\r\n")
+}
+
+// stripTrailingPrompt removes the interactive prompt that ends command output.
+func stripTrailingPrompt(output string) string {
+	return trailingPromptPattern.ReplaceAllString(output, "")
+}
+
 // pwshToolSet is the single source of truth for exposed tool names and
 // descriptions, used both at registration time and by the management UI.
 var pwshToolSet = []ToolInfo{
 	{Name: "list_sessions", Description: "List all pwsh terminal sessions with id, title, host window, size and running state."},
 	{Name: "create_session", Description: "Start a new interactive pwsh session in a ConPTY. Optionally also open a GUI window for it."},
 	{Name: "send_input", Description: "Write raw keystrokes to a session's stdin. Use \\r for Enter; supports escape sequences and Ctrl+C (\\u0003). Output is not returned - use read_output."},
-	{Name: "execute_command", Description: "Run a PowerShell command in a session (Enter appended automatically) and wait for the output to settle before returning the collected output (plain text, ANSI stripped). The session stays interactive - use read_output with since_offset for anything produced later."},
+	{Name: "execute_command", Description: "Run a PowerShell command in a session (Enter appended automatically) and wait for it to finish (the prompt returns) before returning the collected output (plain text, ANSI stripped; command echo and trailing prompt removed). The session stays interactive - use read_output with since_offset for anything produced later."},
 	{Name: "read_output", Description: "Read output buffered since a byte offset (offset 0 returns recent history) as plain text (ANSI stripped). Returns NextOffset to pass back for incremental reads."},
 	{Name: "stop_session", Description: "Terminate a pwsh session and its ConPTY, then remove it from the session list."},
 	{Name: "resize_session", Description: "Resize a session's pseudo terminal so pwsh reflows its output."},
 	{Name: "list_windows", Description: "List the application's terminal windows."},
-	{Name: "open_window", Description: "Open a new terminal window, optionally attaching an existing session; a fresh session is started when none is given."},
 }
 
 // toolDesc looks up a tool description by name.
@@ -121,7 +216,7 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			if pwsh == nil {
 				return nil, okOut{}, fmt.Errorf("pwsh service unavailable")
 			}
-			if err := pwsh.WriteInput(in.SessionID, in.Input); err != nil {
+			if err := pwsh.WriteInput(in.SessionID, decodeInput(in.Input)); err != nil {
 				return nil, okOut{}, err
 			}
 			return nil, okOut{OK: true}, nil
@@ -145,10 +240,13 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			if err != nil {
 				return nil, executeOut{}, err
 			}
+			cleaned := cleanOutput(output)
+			cleaned = stripCommandEcho(cleaned, in.Command)
+			cleaned = stripTrailingPrompt(cleaned)
 			return nil, executeOut{
 				SessionID: in.SessionID,
 				Command:   in.Command,
-				Output:    tailOutput(cleanOutput(output), mcpMaxToolOutput),
+				Output:    tailOutput(cleaned, mcpMaxToolOutput),
 				TimedOut:  timedOut,
 			}, nil
 		})
@@ -226,27 +324,6 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 				out.Windows = []window.WindowInfo{}
 			}
 			return nil, out, nil
-		})
-
-	// ---- open_window ---------------------------------------------------
-	mcp.AddTool(srv,
-		&mcp.Tool{
-			Name:        "open_window",
-			Description: toolDesc("open_window"),
-		},
-		func(ctx context.Context, req *mcp.CallToolRequest, in openWindowIn) (*mcp.CallToolResult, windowInfoOut, error) {
-			if wins == nil {
-				return nil, windowInfoOut{}, fmt.Errorf("GUI unavailable (running headless)")
-			}
-			sid := ""
-			if in.SessionID != nil {
-				sid = *in.SessionID
-			}
-			info, err := attachWindow(wins, pwsh, sid)
-			if err != nil {
-				return nil, windowInfoOut{}, err
-			}
-			return nil, windowInfoOut{Name: info.Name, Title: info.Title}, nil
 		})
 
 	// The exposed tool list for the management UI.
@@ -351,13 +428,4 @@ type listWindowsIn struct{}
 
 type windowListOut struct {
 	Windows []window.WindowInfo `json:"windows"`
-}
-
-type openWindowIn struct {
-	SessionID *string `json:"session_id,omitempty" jsonschema:"Attach this existing session to the new window; omit to start a fresh session in the window."`
-}
-
-type windowInfoOut struct {
-	Name  string `json:"name"`
-	Title string `json:"title"`
 }

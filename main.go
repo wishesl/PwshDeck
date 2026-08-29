@@ -45,6 +45,7 @@ func main() {
 // cap or idle recycling applies (the client owns the process lifecycle).
 func runStdioMCPServer() {
 	pwsh := session.NewSessionManager(0, 0)
+	defer pwsh.ShutdownAll() // graceful client disconnect still cleans up shells
 	srv, _ := mcp.BuildServer(pwsh, nil)
 	if err := srv.Run(context.Background(), &mcpapi.StdioTransport{}); err != nil {
 		log.Fatal(err)

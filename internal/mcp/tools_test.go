@@ -47,3 +47,70 @@ func TestCleanOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeInput(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"carriage return", "ls\\r", "ls\r"},
+		{"ctrl+c", "\\u0003", "\x03"},
+		{"newline and tab", "a\\nb\\t", "a\nb\t"},
+		{"escaped backslash", "a\\\\b", "a\\b"},
+		{"unknown escape kept", "a\\qb", "a\\qb"},
+		{"trailing backslash kept", "ab\\", "ab\\"},
+		{"no escapes", "hello", "hello"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := decodeInput(tt.in); got != tt.want {
+				t.Errorf("decodeInput(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripCommandEcho(t *testing.T) {
+	tests := []struct {
+		name    string
+		output  string
+		command string
+		want    string
+	}{
+		{"echo stripped with CRLF", "Get-Date\r\nTuesday\r\n", "Get-Date", "Tuesday\r\n"},
+		{"echo stripped with LF", "ls\nfile.txt\n", "ls", "file.txt\n"},
+		{"echo with trailing whitespace stripped", "Write-Output hello-mcp  \r\nhello-mcp", "Write-Output hello-mcp", "hello-mcp"},
+		{"no echo leaves output", "result\r\n", "Get-Date", "result\r\n"},
+		{"multi-line command untouched", "a\r\nb\r\n", "a\nb", "a\r\nb\r\n"},
+		{"empty command untouched", "x\r\n", "", "x\r\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripCommandEcho(tt.output, tt.command); got != tt.want {
+				t.Errorf("stripCommandEcho(%q, %q) = %q, want %q", tt.output, tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripTrailingPrompt(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"simple prompt stripped", "hello\r\nPS C:\\dir> ", "hello"},
+		{"nested prompt stripped", "x\r\nPS C:\\dir>> ", "x"},
+		{"prompt without trailing space stripped", "hello\r\nPS C:\\dir>", "hello"},
+		{"no prompt untouched", "hello\r\n", "hello\r\n"},
+		{"mid-output prompt-like text kept", "PS fake> \nhello\n", "PS fake> \nhello\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripTrailingPrompt(tt.in); got != tt.want {
+				t.Errorf("stripTrailingPrompt(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

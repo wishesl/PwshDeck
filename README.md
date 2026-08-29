@@ -9,7 +9,7 @@
 - **MCP 服务**（两种传输方式）：
   - **streamable-HTTP**：`http://127.0.0.1:<port>/mcp`，随 GUI 运行，可在「MCP 管理」页一键启停
   - **stdio**：`pwsh-mcp.exe --mcp`，无头模式，适合经典 `command` 型 MCP 客户端配置
-- **暴露的 MCP 工具**：`list_sessions` / `create_session` / `send_input` / `execute_command` / `read_output` / `stop_session` / `resize_session` / `list_windows` / `open_window`
+- **暴露的 MCP 工具**：`list_sessions` / `create_session` / `send_input` / `execute_command` / `read_output` / `stop_session` / `resize_session` / `list_windows`
 - **配置持久化**：`config.json` 保存 MCP 开关与端口，以及终端标签布局（名称、颜色、**工作目录**，`%APPDATA%\pwsh-mcp\config.json`）；重启后标签恢复，每个标签的 pwsh 会直接启动在上次的工作目录
 
 ## 项目结构

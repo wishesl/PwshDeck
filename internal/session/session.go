@@ -39,6 +39,9 @@ type TerminalSession struct {
 	createdAt  time.Time
 	lastActive time.Time // last input/output activity, for idle recycling
 	oscCarry   []byte    // tail of recent output for split OSC 9;9 reports; readLoop only
+	promptSeq  uint64    // prompt counter (OSC 9;9 reports), for completion; guarded by mu
+
+	cmdMu sync.Mutex // serializes ExecuteCommand calls per session
 
 	buf outputBuffer
 }
@@ -97,12 +100,21 @@ func (s *TerminalSession) idleFor() time.Duration {
 	return time.Since(s.lastActive)
 }
 
-// setPwd records the shell's current working directory, as reported by the
-// prompt hook.
-func (s *TerminalSession) setPwd(pwd string) {
+// notePrompt records a rendered prompt — the OSC 9;9 cwd report the prompt hook
+// emits — updating the shell's working directory and bumping the prompt counter
+// used to detect command completion.
+func (s *TerminalSession) notePrompt(pwd string) {
 	s.mu.Lock()
 	s.Pwd = pwd
+	s.promptSeq++
 	s.mu.Unlock()
+}
+
+// promptMark returns how many prompts have been observed so far.
+func (s *TerminalSession) promptMark() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.promptSeq
 }
 
 // oscCwdPattern matches ConEmu-style OSC 9;9 working-directory reports
@@ -117,21 +129,27 @@ const oscCarryBytes = 1024
 
 // consumeCwdReport scans a chunk of ConPTY output for OSC 9;9 cwd reports and
 // returns the newest path found (empty when the chunk carries none). A report
-// split across two reads is still recognized by keeping the tail of previous
-// output in oscCarry. Called from readLoop only, so oscCarry needs no locking.
+// split across two reads is still recognized by keeping an unterminated tail in
+// oscCarry. Called from readLoop only, so oscCarry needs no locking.
 func (s *TerminalSession) consumeCwdReport(chunk []byte) string {
 	combined := append(append([]byte{}, s.oscCarry...), chunk...)
 	var pwd string
 	for _, m := range oscCwdPattern.FindAllSubmatch(combined, -1) {
 		pwd = string(m[1])
 	}
-	if bytes.Contains(combined, []byte("\x1b]")) {
-		if len(combined) > oscCarryBytes {
-			combined = combined[len(combined)-oscCarryBytes:]
+	// Carry only an unterminated OSC report (the tail from the last ESC ] that
+	// has no terminator yet). Complete reports are fully matched above and must
+	// NOT be retained — otherwise they would be re-matched, and re-counted, when
+	// the next chunk arrives.
+	s.oscCarry = s.oscCarry[:0]
+	if idx := bytes.LastIndex(combined, []byte("\x1b]")); idx >= 0 {
+		tail := combined[idx:]
+		if !oscCwdPattern.Match(tail) {
+			if len(tail) > oscCarryBytes {
+				tail = tail[len(tail)-oscCarryBytes:]
+			}
+			s.oscCarry = append(s.oscCarry, tail...)
 		}
-		s.oscCarry = append(s.oscCarry[:0], combined...)
-	} else {
-		s.oscCarry = nil
 	}
 	return pwd
 }
