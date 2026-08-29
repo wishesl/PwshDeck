@@ -78,6 +78,8 @@ export function SetTabPrefs(prefs: config$0.TabPref[] | null): $CancellablePromi
 
 /**
  * ShowFromTray restores all windows and brings the primary one to the front.
+ * Handles both tray-hidden windows (hidden via Hide() → need Show() to restore
+ * the WebView2 surface) and taskbar-minimised windows (need UnMinimise()).
  */
 export function ShowFromTray(): $CancellablePromise<void> {
     return $Call.ByID(1472431269);

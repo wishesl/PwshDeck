@@ -114,6 +114,11 @@ func runGUI() {
 		log.Fatal(err)
 	}
 
+	// When a second instance launches (single-instance mutex), it signals the
+	// show event; reveal the windows through Wails' Show() so the WebView2
+	// content is restored too (not just the native window frame).
+	go watchShowRequest(winSvc.ShowFromTray)
+
 	// Run the application. This blocks until the application has been exited.
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

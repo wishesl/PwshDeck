@@ -186,16 +186,22 @@ func (w *WindowManager) HideToTray() error {
 }
 
 // ShowFromTray restores all windows and brings the primary one to the front.
+// Handles both tray-hidden windows (hidden via Hide() → need Show() to restore
+// the WebView2 surface) and taskbar-minimised windows (need UnMinimise()).
 func (w *WindowManager) ShowFromTray() {
 	if w.app == nil {
 		return
 	}
 	for _, win := range w.app.Window.GetAll() {
-		win.Show()
+		if win.IsMinimised() {
+			win.UnMinimise()
+		} else {
+			win.Show()
+		}
 	}
 	if w.primary != "" {
 		if win, ok := w.app.Window.GetByName(w.primary); ok {
-			win.Show().Focus()
+			win.Focus()
 		}
 	}
 }

@@ -5,9 +5,6 @@ package main
 import (
 	"errors"
 	"log"
-	"strings"
-	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -16,21 +13,17 @@ import (
 // the interactive session (the stdio --mcp mode intentionally skips this).
 const mutexName = `Local\pwsh-mcp-single-instance`
 
-var (
-	singleInstanceHandle windows.Handle
+// showEventName lets a second instance tell the running instance to reveal its
+// (possibly tray-hidden) windows. Revealing must go through Wails' own Show()
+// path — a bare ShowWindow(SW_SHOW) from the second process would surface an
+// empty/white WebView2 surface, because it skips chromium.Show().
+const showEventName = `Local\pwsh-mcp-show-request`
 
-	user32                  = syscall.NewLazyDLL("user32.dll")
-	procEnumWindows         = user32.NewProc("EnumWindows")
-	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
-	procIsIconic            = user32.NewProc("IsIconic")
-	procIsWindowVisible     = user32.NewProc("IsWindowVisible")
-	procShowWindow          = user32.NewProc("ShowWindow")
-	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
-)
+var singleInstanceHandle windows.Handle
 
 // acquireSingleInstance claims the single-instance mutex. When another GUI
-// instance is already running it brings that window to the foreground and
-// returns false so the new process can exit.
+// instance is already running it signals that instance to reveal its windows
+// and returns false so the new process can exit.
 func acquireSingleInstance() bool {
 	name, err := windows.UTF16PtrFromString(mutexName)
 	if err != nil {
@@ -40,7 +33,7 @@ func acquireSingleInstance() bool {
 	h, err := windows.CreateMutex(nil, false, name)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-			focusExistingWindow()
+			signalExistingInstance()
 			return false
 		}
 		log.Printf("single-instance: CreateMutex failed: %v", err)
@@ -50,37 +43,49 @@ func acquireSingleInstance() bool {
 	return true
 }
 
-// focusExistingWindow brings the running instance's terminal window(s) to the
-// foreground. A window hidden to the system tray is neither iconic nor
-// visible, so it needs an explicit SW_SHOW before SetForegroundWindow can
-// surface it.
-func focusExistingWindow() {
-	var hwnds []uintptr
-	callback := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
-		var buf [256]uint16
-		n, _, _ := procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-		title := syscall.UTF16ToString(buf[:n])
-		if strings.Contains(title, "pwsh Terminal") {
-			hwnds = append(hwnds, hwnd)
-		}
-		return 1 // keep enumerating
-	})
-	procEnumWindows.Call(callback, 0)
-
-	if len(hwnds) == 0 {
-		log.Println("single-instance: another instance is running but its window was not found")
+// signalExistingInstance pings the running instance's show event. The running
+// instance watches that event and reveals its windows on its own main thread.
+func signalExistingInstance() {
+	name, err := windows.UTF16PtrFromString(showEventName)
+	if err != nil {
+		log.Printf("single-instance: cannot build show-event name: %v", err)
 		return
 	}
-
-	// Restore every matching window: show hidden (tray) ones and un-minimise
-	// iconic ones, then focus the first (primary) window.
-	for _, hwnd := range hwnds {
-		if visible, _, _ := procIsWindowVisible.Call(hwnd); visible == 0 {
-			procShowWindow.Call(hwnd, 5) // SW_SHOW
-		} else if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
-			procShowWindow.Call(hwnd, 9) // SW_RESTORE
-		}
+	h, err := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, name)
+	if err != nil {
+		// The running instance creates the event during startup; if it is not
+		// there yet that instance is still booting and will show normally.
+		log.Printf("single-instance: running instance's show event not ready: %v", err)
+		return
 	}
-	procSetForegroundWindow.Call(hwnds[0])
-	log.Println("single-instance: focusing the running instance")
+	defer windows.CloseHandle(h)
+	if err := windows.SetEvent(h); err != nil {
+		log.Printf("single-instance: SetEvent failed: %v", err)
+	}
+}
+
+// watchShowRequest creates the cross-process show event and blocks until a
+// second instance signals it, then invokes reveal (which restores the windows
+// via Wails' Show()/Focus() on the main thread). Run it once per GUI process.
+func watchShowRequest(reveal func()) {
+	name, err := windows.UTF16PtrFromString(showEventName)
+	if err != nil {
+		log.Printf("single-instance: cannot build show-event name: %v", err)
+		return
+	}
+	h, err := windows.CreateEvent(nil, 1, 0, name) // manual-reset, non-signaled
+	if err != nil {
+		log.Printf("single-instance: CreateEvent failed: %v", err)
+		return
+	}
+	defer windows.CloseHandle(h)
+
+	for {
+		if _, err := windows.WaitForSingleObject(h, windows.INFINITE); err != nil {
+			log.Printf("single-instance: wait on show event failed: %v", err)
+			return
+		}
+		_ = windows.ResetEvent(h)
+		reveal()
+	}
 }
