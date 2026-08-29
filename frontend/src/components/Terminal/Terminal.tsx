@@ -247,17 +247,19 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     }
     term.clearSelection();
     setSelMenu(null);
+    term.focus(); // return keyboard focus to the terminal
   };
 
   const pasteClipboard = () => {
     const term = termRef.current;
     if (!term) return;
+    setSelMenu(null);
+    term.focus(); // return keyboard focus to the terminal before pasting
     Clipboard.Text()
       .then((text) => {
         if (text) term.paste(text);
       })
       .catch(() => {});
-    setSelMenu(null);
   };
 
   return (
