@@ -48,9 +48,11 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
   const fitRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<Phase>('starting');
-  // Floating copy/paste menu shown while text is selected. Ctrl+C is claimed
-  // by the shell (SIGINT), so a selected-text menu is the ergonomic copy path.
+  // Floating copy/paste menu shown while text is selected or on right-click.
+  // Ctrl+C is claimed by the shell (SIGINT), so this menu is the ergonomic
+  // copy/paste path.
   const [selMenu, setSelMenu] = useState<{ x: number; y: number } | null>(null);
+  const selMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Latest props for callbacks without recreating the main effect.
   const accentRef = useRef(accent);
@@ -101,18 +103,34 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     syncSize();
     window.addEventListener('resize', syncSize);
 
-    // Show a small copy/paste menu once the user finishes selecting text,
-    // anchored to the mouse-up position; hide it when the selection clears.
-    const onMouseUp = (e: MouseEvent) => {
-      if (!term.hasSelection()) return;
+    // Show a small copy/paste menu when the user finishes selecting text or
+    // right-clicks. Capture phase so xterm's own event handling (which may
+    // stopPropagation) cannot swallow it. It is dismissed by clicking outside
+    // or when the selection clears.
+    const menuPos = (clientX: number, clientY: number) => {
       const rect = container.getBoundingClientRect();
       const menuW = 150;
       const menuH = 42;
-      const x = Math.max(4, Math.min(e.clientX - rect.left + 12, rect.width - menuW - 4));
-      const y = Math.max(4, Math.min(e.clientY - rect.top + 12, rect.height - menuH - 4));
-      setSelMenu({ x, y });
+      return {
+        x: Math.max(4, Math.min(clientX - rect.left + 12, rect.width - menuW - 4)),
+        y: Math.max(4, Math.min(clientY - rect.top + 12, rect.height - menuH - 4)),
+      };
     };
-    container.addEventListener('mouseup', onMouseUp);
+    const onMouseUp = (e: MouseEvent) => {
+      if (!term.hasSelection()) return;
+      setSelMenu(menuPos(e.clientX, e.clientY));
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      setSelMenu(menuPos(e.clientX, e.clientY));
+    };
+    const onDocMouseDown = (e: MouseEvent) => {
+      const menu = selMenuRef.current;
+      if (menu && !menu.contains(e.target as Node)) setSelMenu(null);
+    };
+    container.addEventListener('mouseup', onMouseUp, true);
+    container.addEventListener('contextmenu', onContextMenu, true);
+    document.addEventListener('mousedown', onDocMouseDown, true);
     const selDisposable = term.onSelectionChange(() => {
       if (!term.hasSelection()) setSelMenu(null);
     });
@@ -176,7 +194,9 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
       offData();
       offStatus();
       window.removeEventListener('resize', syncSize);
-      container.removeEventListener('mouseup', onMouseUp);
+      container.removeEventListener('mouseup', onMouseUp, true);
+      container.removeEventListener('contextmenu', onContextMenu, true);
+      document.removeEventListener('mousedown', onDocMouseDown, true);
       selDisposable.dispose();
       const id = sessionIdRef.current;
       if (id) {
@@ -252,7 +272,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
       <div ref={containerRef} className="terminal-xterm" />
 
       {selMenu && (
-        <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
+        <div ref={selMenuRef} className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           <button type="button" onClick={copySelection}>
             复制
           </button>
