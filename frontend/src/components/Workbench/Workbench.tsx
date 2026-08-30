@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import Terminal from '../Terminal';
-import { computeLayout, type Direction, type LayoutNode, type Placement } from './types';
+import type { Direction, LayoutNode, Placement } from './types';
 import './Workbench.css';
 
 export interface TabView {
@@ -11,177 +11,132 @@ export interface TabView {
   sessionId: string | null;
 }
 
-interface WorkbenchProps {
-  layout: LayoutNode;
-  tabs: TabView[];
-  activeId: string;
-  onActivate: (id: string) => void;
-  onClosePane: (tabId: string) => void;
-  onReady: (tabId: string, sessionId: string) => void;
-  onRatio: (splitId: string, ratio: number) => void;
-  onSplitAtEdge: (tabId: string, placement: Placement) => void;
-  onMovePane: (sourceId: string, targetId: string, placement: Placement) => void;
-  onMergePane: (sourceId: string) => void;
+export interface PaneState {
+  id: string;
+  tabIds: string[];
+  activeTabId: string;
 }
 
-type DragPayload = { type: 'tab' | 'pane'; tabId: string };
-type DropPreview =
-  | { kind: 'root'; placement: Placement }
-  | { kind: 'pane'; tabId: string; placement: Placement }
-  | { kind: 'merge'; tabId: string }
-  | null;
+interface WorkbenchProps {
+  layout: LayoutNode;
+  panes: PaneState[];
+  tabs: TabView[];
+  activePaneId: string | null;
+  onSelectTab: (paneId: string, tabId: string) => void;
+  onAddTab: (paneId: string) => void;
+  onCloseTab: (tabId: string) => void;
+  onReady: (tabId: string, sessionId: string) => void;
+  onRatio: (splitId: string, ratio: number) => void;
+  onSplitTab: (sourceTabId: string, targetPaneId: string, placement: Placement) => void;
+  onMoveTab: (sourceTabId: string, targetPaneId: string) => void;
+  onTabContextMenu: (tabId: string, x: number, y: number) => void;
+}
+
+type DropPreview = { paneId: string; placement: Placement } | { paneId: string; center: true } | null;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export default function Workbench({
   layout,
+  panes,
   tabs,
-  activeId,
-  onActivate,
-  onClosePane,
+  activePaneId,
+  onSelectTab,
+  onAddTab,
+  onCloseTab,
   onReady,
   onRatio,
-  onSplitAtEdge,
-  onMovePane,
-  onMergePane,
+  onSplitTab,
+  onMoveTab,
+  onTabContextMenu,
 }: WorkbenchProps) {
-  const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
-  const dragRef = useRef<DragPayload | null>(null);
+  const [dragTabId, setDragTabId] = useState<string | null>(null);
+  const dragRef = useRef<string | null>(null);
   const [dropPreview, setDropPreview] = useState<DropPreview>(null);
 
-  const beginDrag = (p: DragPayload) => {
-    dragRef.current = p;
-    setDragPayload(p);
+  const beginDrag = (tabId: string) => {
+    dragRef.current = tabId;
+    setDragTabId(tabId);
   };
   const endDrag = () => {
     dragRef.current = null;
-    setDragPayload(null);
+    setDragTabId(null);
     setDropPreview(null);
   };
 
-  const geo = computeLayout(layout, { x: 0, y: 0, w: 1, h: 1 });
-
-  const rootDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDropPreview({ kind: 'root', placement: placementFor(e, e.currentTarget) });
-  };
-
-  const rootDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const p = readPayload(e);
-    endDrag();
-    if (!p) return;
-    onSplitAtEdge(p.tabId, placementFor(e, e.currentTarget));
-  };
-
-  return (
-    <div className="wb-root" onDragOver={rootDragOver} onDrop={rootDrop} onDragLeave={rootDragLeave(() => setDropPreview(null))}>
-      {tabs.map((tab) => {
-        const pos = geo.leaves.find((l) => l.tabId === tab.id);
-        const visible = !!pos;
-        const isMergeTarget = dropPreview?.kind === 'merge' && dropPreview.tabId === tab.id;
-        const edgeDrop =
-          dropPreview?.kind === 'pane' && dropPreview.tabId === tab.id ? dropPreview.placement : null;
-        return (
-          <div
-            key={tab.id}
-            className={`wb-pane ${tab.id === activeId ? 'active' : ''} ${dragPayload?.tabId === tab.id ? 'wb-dragging' : ''} ${isMergeTarget ? 'wb-merge' : ''}`}
-            style={
-              visible && pos
-                ? { left: `${pos.rect.x * 100}%`, top: `${pos.rect.y * 100}%`, width: `${pos.rect.w * 100}%`, height: `${pos.rect.h * 100}%` }
-                : { display: 'none' }
+  const render = (n: LayoutNode) => {
+    if (n.kind === 'leaf') {
+      const pane = panes.find((p) => p.id === n.paneId);
+      if (!pane) return null;
+      const preview = dropPreview && dropPreview.paneId === pane.id ? dropPreview : null;
+      return (
+        <PaneView
+          pane={pane}
+          tabs={tabs}
+          active={pane.id === activePaneId}
+          draggingTabId={dragTabId}
+          edgeDrop={preview && 'placement' in preview ? preview.placement : null}
+          centerDrop={preview ? 'center' in preview : false}
+          onSelectTab={onSelectTab}
+          onAddTab={onAddTab}
+          onCloseTab={onCloseTab}
+          onReady={onReady}
+          onTabDragStart={(e, tabId) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'tab', tabId }));
+            e.dataTransfer.effectAllowed = 'move';
+            beginDrag(tabId);
+          }}
+          onTabDragEnd={endDrag}
+          onPaneDragOver={(e) => {
+            const src = dragRef.current;
+            if (!src) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            if (nearEdge(e, e.currentTarget)) {
+              setDropPreview({ paneId: pane.id, placement: placementFor(e, e.currentTarget) });
+            } else {
+              setDropPreview({ paneId: pane.id, center: true });
             }
-            onMouseDown={() => onActivate(tab.id)}
-            onDragOver={(e) => {
-              const p = dragRef.current;
-              if (!p || p.type !== 'pane' || p.tabId === tab.id) return;
-              e.preventDefault();
-              e.stopPropagation();
-              e.dataTransfer.dropEffect = 'move';
-              const placement = placementFor(e, e.currentTarget);
-              setDropPreview(nearEdge(e, e.currentTarget) ? { kind: 'pane', tabId: tab.id, placement } : { kind: 'merge', tabId: tab.id });
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const p = readPayload(e);
-              endDrag();
-              if (!p || p.type !== 'pane' || p.tabId === tab.id) return;
-              const placement = placementFor(e, e.currentTarget);
-              if (nearEdge(e, e.currentTarget)) onMovePane(p.tabId, tab.id, placement);
-              else onMergePane(p.tabId);
-            }}
-          >
-            <div className="wb-pane-head" style={{ '--tab-accent': tab.accent } as CSSProperties}>
-              <span
-                className="wb-pane-drag"
-                draggable
-                title={`拖拽 ${tab.title}`}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'pane', tabId: tab.id }));
-                  e.dataTransfer.effectAllowed = 'move';
-                  beginDrag({ type: 'pane', tabId: tab.id });
-                }}
-                onDragEnd={endDrag}
-              >
-                <span className="tab-dot" />
-                <span className="wb-pane-title">{tab.title}</span>
-              </span>
-              {visible && geo.leaves.length > 1 && (
-                <button
-                  type="button"
-                  className="wb-btn wb-close"
-                  title="收起此面板（回到标签）"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => onClosePane(tab.id)}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            <div className="wb-pane-body">
-              <Terminal
-                accent={tab.accent}
-                active={tab.id === activeId}
-                initialDir={tab.pwd}
-                onReady={(sessionId) => onReady(tab.id, sessionId)}
-              />
-            </div>
-            {edgeDrop && <div className={`wb-drop-strip wb-drop-${edgeDrop}`} />}
-          </div>
-        );
-      })}
+          }}
+          onPaneDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const src = readTabId(e);
+            endDrag();
+            if (!src) return;
+            if (nearEdge(e, e.currentTarget)) {
+              onSplitTab(src, pane.id, placementFor(e, e.currentTarget));
+            } else {
+              onMoveTab(src, pane.id);
+            }
+          }}
+          onTabContextMenu={onTabContextMenu}
+        />
+      );
+    }
+    return (
+      <div className={`wb-split ${n.direction === 'row' ? 'wb-row' : 'wb-col'}`}>
+        <div className="wb-child" style={{ flex: `${n.ratio} 1 0%` }}>
+          {render(n.a)}
+        </div>
+        <Divider direction={n.direction} ratio={n.ratio} onDrag={(r) => onRatio(n.id, r)} />
+        <div className="wb-child" style={{ flex: `${1 - n.ratio} 1 0%` }}>
+          {render(n.b)}
+        </div>
+      </div>
+    );
+  };
 
-      {dropPreview?.kind === 'root' && (
-        <div className={`wb-root-strip wb-root-${dropPreview.placement}`} />
-      )}
-
-      {geo.dividers.map((d) => {
-        // Find the owning split's current ratio.
-        const ratio = ratioOf(layout, d.id);
-        return (
-          <Divider
-            key={d.id}
-            id={d.id}
-            direction={d.direction}
-            x={d.x}
-            y={d.y}
-            ratio={ratio}
-            onDrag={(r) => onRatio(d.id, r)}
-          />
-        );
-      })}
-    </div>
-  );
+  return <div className="wb-root">{render(layout)}</div>;
 }
 
-function readPayload(e: DragEvent): DragPayload | null {
+function readTabId(e: DragEvent): string | null {
   try {
     const raw = e.dataTransfer.getData('text/plain');
     if (!raw) return null;
     const p = JSON.parse(raw);
-    if (p && (p.type === 'tab' || p.type === 'pane') && typeof p.tabId === 'string') return p;
+    if (p && p.type === 'tab' && typeof p.tabId === 'string') return p.tabId;
   } catch {
     /* not our drag */
   }
@@ -210,32 +165,131 @@ function nearEdge(e: DragEvent, el: HTMLElement): boolean {
   return Math.min(rx, 1 - rx, ry, 1 - ry) <= 0.28;
 }
 
-function ratioOf(node: LayoutNode, id: string): number {
-  if (node.kind === 'split') {
-    if (node.id === id) return node.ratio;
-    return ratioOf(node.a, id) || ratioOf(node.b, id);
-  }
-  return 0.5;
+interface PaneViewProps {
+  pane: PaneState;
+  tabs: TabView[];
+  active: boolean;
+  draggingTabId: string | null;
+  edgeDrop: Placement | null;
+  centerDrop: boolean;
+  onSelectTab: (paneId: string, tabId: string) => void;
+  onAddTab: (paneId: string) => void;
+  onCloseTab: (tabId: string) => void;
+  onReady: (tabId: string, sessionId: string) => void;
+  onTabDragStart: (e: DragEvent<HTMLDivElement>, tabId: string) => void;
+  onTabDragEnd: () => void;
+  onPaneDragOver: (e: DragEvent<HTMLDivElement>) => void;
+  onPaneDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onTabContextMenu: (tabId: string, x: number, y: number) => void;
 }
 
-function rootDragLeave(fn: () => void) {
-  return (e: DragEvent<HTMLDivElement>) => {
-    const el = e.currentTarget as HTMLElement;
-    const related = e.relatedTarget as Node | null;
-    if (!related || !el.contains(related)) fn();
-  };
+function PaneView({
+  pane,
+  tabs,
+  active,
+  draggingTabId,
+  edgeDrop,
+  centerDrop,
+  onSelectTab,
+  onAddTab,
+  onCloseTab,
+  onReady,
+  onTabDragStart,
+  onTabDragEnd,
+  onPaneDragOver,
+  onPaneDrop,
+  onTabContextMenu,
+}: PaneViewProps) {
+  const paneTabs = pane.tabIds
+    .map((id) => tabs.find((t) => t.id === id))
+    .filter((t): t is TabView => !!t);
+
+  return (
+    <div
+      className={`wb-pane ${active ? 'active' : ''} ${centerDrop ? 'wb-merge' : ''}`}
+      onMouseDown={() => onSelectTab(pane.id, pane.activeTabId)}
+      onDragOver={onPaneDragOver}
+      onDrop={onPaneDrop}
+    >
+      <div className="wb-pane-tabs">
+        {paneTabs.map((tab) => {
+          const isActive = tab.id === pane.activeTabId;
+          return (
+            <div
+              key={tab.id}
+              className={`wb-tab ${isActive ? 'active' : ''} ${draggingTabId === tab.id ? 'dragging' : ''}`}
+              style={{ '--tab-accent': tab.accent } as CSSProperties}
+              draggable
+              onDragStart={(e) => onTabDragStart(e, tab.id)}
+              onDragEnd={onTabDragEnd}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectTab(pane.id, tab.id);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onTabContextMenu(tab.id, e.clientX, e.clientY);
+              }}
+              title={tab.title}
+            >
+              <span className="tab-dot" />
+              <span className="wb-tab-title">{tab.title}</span>
+              {pane.tabIds.length > 1 && (
+                <button
+                  type="button"
+                  className="wb-tab-close"
+                  title="关闭"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(tab.id);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          );
+        })}
+        <button type="button" className="wb-tab-add" title="新建标签" onClick={() => onAddTab(pane.id)}>
+          ＋
+        </button>
+      </div>
+
+      <div className="wb-pane-body">
+        {pane.tabIds.map((tabId) => {
+          const tab = tabs.find((t) => t.id === tabId);
+          if (!tab) return null;
+          return (
+            <div
+              key={tabId}
+              className="wb-tab-view"
+              style={{ display: tabId === pane.activeTabId ? 'block' : 'none', height: '100%' }}
+            >
+              <Terminal
+                accent={tab.accent}
+                active={tabId === pane.activeTabId}
+                initialDir={tab.pwd}
+                onReady={(sessionId) => onReady(tabId, sessionId)}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {edgeDrop && <div className={`wb-drop-strip wb-drop-${edgeDrop}`} />}
+    </div>
+  );
 }
 
 interface DividerProps {
-  id: string;
   direction: Direction;
-  x: number;
-  y: number;
   ratio: number;
   onDrag: (ratio: number) => void;
 }
 
-function Divider({ direction, x, y, ratio, onDrag }: DividerProps) {
+function Divider({ direction, ratio, onDrag }: DividerProps) {
   const handleDown = (e: ReactMouseEvent) => {
     e.preventDefault();
     const el = e.currentTarget as HTMLElement;
@@ -261,7 +315,6 @@ function Divider({ direction, x, y, ratio, onDrag }: DividerProps) {
   return (
     <div
       className={`wb-divider ${direction === 'row' ? 'wb-divider-row' : 'wb-divider-col'}`}
-      style={direction === 'row' ? { left: `${x * 100}%` } : { top: `${y * 100}%` }}
       onMouseDown={handleDown}
     />
   );

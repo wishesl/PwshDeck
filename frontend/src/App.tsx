@@ -1,19 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Events, Window } from '@wailsio/runtime';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import McpPanel from './components/McpPanel';
 import TabMenu from './components/TabMenu';
 import { DEFAULT_ACCENT } from './components/Terminal';
-import Workbench, { type TabView } from './components/Workbench/Workbench';
-import {
-  addAtEdge,
-  leaf,
-  moveLeaf,
-  removeLeaf,
-  updateSplit,
-  type LayoutNode,
-  type Placement,
-} from './components/Workbench/types';
+import Workbench, { type PaneState, type TabView } from './components/Workbench/Workbench';
+import { insertPane, leaf, removeLeaf, updateSplit, type LayoutNode, type Placement } from './components/Workbench/types';
 import './App.css';
 
 type Tab = {
@@ -26,21 +18,20 @@ type Tab = {
 
 type MenuState = { tabId: string; x: number; y: number };
 
-const MAX_VISIBLE_TABS = 5;
-
 let uid = 0;
 const nextTabId = () => `tab-${++uid}`;
+let paneSeq = 0;
+const nextPaneId = () => `pane-${++paneSeq}`;
 
 export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
-  const [tabsLoaded, setTabsLoaded] = useState(false);
-  const [activeId, setActiveId] = useState('');
+  const [panes, setPanes] = useState<PaneState[]>([]);
   const [layout, setLayout] = useState<LayoutNode>(leaf(''));
+  const [activePaneId, setActivePaneId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [mcpOpen, setMcpOpen] = useState(false);
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
-  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+
   const tabSeqRef = useRef(1);
   const tabsRef = useRef<Tab[]>(tabs);
   const pwdTimerRef = useRef<number | null>(null);
@@ -118,6 +109,7 @@ export default function App() {
     };
   }, []);
 
+  // Restore persisted tabs into a single pane.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -139,18 +131,26 @@ export default function App() {
             }))
           : [{ id: nextTabId(), title: '终端1', accent: DEFAULT_ACCENT, pwd: '', sessionId: null }];
       tabSeqRef.current = restored.length;
+      const pane: PaneState = {
+        id: nextPaneId(),
+        tabIds: restored.map((t) => t.id),
+        activeTabId: restored[0].id,
+      };
       setTabs(restored);
-      setActiveId(restored[0].id);
-      setLayout(leaf(restored[0].id));
-      setTabsLoaded(true);
+      setPanes([pane]);
+      setLayout(leaf(pane.id));
+      setActivePaneId(pane.id);
+      setLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // ---- Tab operations ---------------------------------------------------
-  const addTab = () => {
+  // ---- Tab / pane operations --------------------------------------------
+  const findPane = (tabId: string) => panes.find((p) => p.tabIds.includes(tabId));
+
+  const addTab = (paneId: string) => {
     tabSeqRef.current += 1;
     const tab: Tab = {
       id: nextTabId(),
@@ -159,38 +159,45 @@ export default function App() {
       pwd: '',
       sessionId: null,
     };
-    const next = [...tabs, tab];
-    setTabs(next);
-    setActiveId(tab.id);
-    setLayout(leaf(tab.id));
-    persistTabs(next);
+    const nextTabs = [...tabs, tab];
+    setTabs(nextTabs);
+    setPanes((prev) =>
+      prev.map((p) => (p.id === paneId ? { ...p, tabIds: [...p.tabIds, tab.id], activeTabId: tab.id } : p)),
+    );
+    setActivePaneId(paneId);
+    persistTabs(nextTabs);
   };
 
-  const closeTab = (id: string) => {
+  const closeTab = (tabId: string) => {
     if (tabs.length <= 1) return;
-    const idx = tabs.findIndex((t) => t.id === id);
-    if (idx < 0) return;
-    const next = tabs.filter((t) => t.id !== id);
-    setTabs(next);
-    persistTabs(next);
+    const pane = findPane(tabId);
+    if (!pane) return;
+    const nextTabs = tabs.filter((t) => t.id !== tabId);
+    setTabs(nextTabs);
+    persistTabs(nextTabs);
 
-    const visibleIds = layoutLeafIds(layout);
-    if (visibleIds.includes(id)) {
-      if (visibleIds.length === 1) {
-        // It was the only visible tab: switch to the fallback single view.
-        setLayout(leaf(next[Math.min(idx, next.length - 1)].id));
-      } else {
-        setLayout(removeLeaf(layout, id)[0]);
+    const remaining = pane.tabIds.filter((id) => id !== tabId);
+    if (remaining.length === 0) {
+      setPanes((prev) => prev.filter((p) => p.id !== pane.id));
+      setLayout((prev) => removeLeaf(prev, pane.id)[0]);
+      if (activePaneId === pane.id) {
+        const other = panes.find((p) => p.id !== pane.id);
+        if (other) setActivePaneId(other.id);
       }
-    }
-    if (activeId === id) {
-      setActiveId(next[Math.min(idx, next.length - 1)].id);
+    } else {
+      setPanes((prev) =>
+        prev.map((p) =>
+          p.id === pane.id
+            ? { ...p, tabIds: remaining, activeTabId: p.activeTabId === tabId ? remaining[0] : p.activeTabId }
+            : p,
+        ),
+      );
     }
   };
 
-  const selectTab = (id: string) => {
-    setActiveId(id);
-    setLayout(leaf(id));
+  const selectTab = (paneId: string, tabId: string) => {
+    setActivePaneId(paneId);
+    setPanes((prev) => prev.map((p) => (p.id === paneId ? { ...p, activeTabId: tabId } : p)));
   };
 
   const renameTab = (id: string, title: string) => {
@@ -205,7 +212,6 @@ export default function App() {
     persistTabs(next);
   };
 
-  // ---- Layout operations ------------------------------------------------
   const handleReady = (tabId: string, sessionId: string) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
   };
@@ -214,27 +220,43 @@ export default function App() {
     setLayout((prev) => updateSplit(prev, splitId, ratio));
   };
 
-  const handleSplitAtEdge = (tabId: string, placement: Placement) => {
-    setLayout((prev) => addAtEdge(prev, tabId, placement));
-    setActiveId(tabId);
+  const handleSplitTab = (sourceTabId: string, targetPaneId: string, placement: Placement) => {
+    const sourcePane = findPane(sourceTabId);
+    if (!sourcePane) return;
+    if (sourcePane.id === targetPaneId && sourcePane.tabIds.length === 1) return;
+    const newPaneId = nextPaneId();
+    const newPane: PaneState = { id: newPaneId, tabIds: [sourceTabId], activeTabId: sourceTabId };
+    const remaining = sourcePane.tabIds.filter((id) => id !== sourceTabId);
+
+    let nextPanes = panes.map((p) => (p.id === sourcePane.id ? { ...p, tabIds: remaining } : p));
+    let nextLayout = insertPane(layout, targetPaneId, newPaneId, placement);
+    if (remaining.length === 0) {
+      nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
+      nextLayout = removeLeaf(nextLayout, sourcePane.id)[0];
+    }
+    nextPanes = [...nextPanes, newPane];
+    setPanes(nextPanes);
+    setLayout(nextLayout);
+    setActivePaneId(newPaneId);
   };
 
-  const handleClosePane = (tabId: string) => {
-    setLayout((prev) => {
-      const next = removeLeaf(prev, tabId)[0];
-      return next === prev ? prev : next;
+  const handleMoveTab = (sourceTabId: string, targetPaneId: string) => {
+    const sourcePane = findPane(sourceTabId);
+    if (!sourcePane || sourcePane.id === targetPaneId) return;
+    const remaining = sourcePane.tabIds.filter((id) => id !== sourceTabId);
+    let nextPanes = panes.map((p) => {
+      if (p.id === sourcePane.id) return { ...p, tabIds: remaining };
+      if (p.id === targetPaneId) return { ...p, tabIds: [...p.tabIds, sourceTabId], activeTabId: sourceTabId };
+      return p;
     });
-  };
-
-  const handleMovePane = (sourceId: string, targetId: string, placement: Placement) => {
-    setLayout((prev) => moveLeaf(prev, sourceId, targetId, placement));
-  };
-
-  const handleMergePane = (sourceId: string) => {
-    setLayout((prev) => {
-      const next = removeLeaf(prev, sourceId)[0];
-      return next === prev ? prev : next;
-    });
+    let nextLayout = layout;
+    if (remaining.length === 0) {
+      nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
+      nextLayout = removeLeaf(layout, sourcePane.id)[0];
+    }
+    setPanes(nextPanes);
+    setLayout(nextLayout);
+    setActivePaneId(targetPaneId);
   };
 
   // Esc closes whichever overlay is open.
@@ -242,7 +264,6 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenu(null);
-        setOverflowOpen(false);
         setMcpOpen(false);
         setClosePromptOpen(false);
       }
@@ -251,34 +272,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // ---- Derived ----------------------------------------------------------
-  const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
-  const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
-  const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
-
-  const toggleMore = () => {
-    if (!overflowOpen && moreBtnRef.current) {
-      const r = moreBtnRef.current.getBoundingClientRect();
-      setOverflowPos({
-        x: Math.max(4, Math.min(r.left, window.innerWidth - 220)),
-        y: Math.max(4, Math.min(r.bottom + 6, window.innerHeight - 240)),
-      });
-    }
-    setOverflowOpen((o) => !o);
-  };
-
-  const selectOverflowTab = (id: string) => {
-    const tab = tabs.find((t) => t.id === id);
-    if (!tab) return;
-    setTabs([tab, ...tabs.filter((t) => t.id !== id)]);
-    selectTab(id);
-    setOverflowOpen(false);
-  };
-
-  if (!tabsLoaded) {
+  if (!loaded) {
     return <div className="app" />;
   }
 
+  const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
   const tabViews: TabView[] = tabs.map((t) => ({
     id: t.id,
     title: t.title,
@@ -293,59 +291,7 @@ export default function App() {
         <div className="brand">
           Pwsh<span className="brand-accent">Deck</span>
         </div>
-        <div className="tab-bar">
-          {visibleTabs.map((tab) => {
-            const active = tab.id === activeId;
-            return (
-              <div
-                key={tab.id}
-                className={`tab ${active ? 'active' : ''}`}
-                style={{ '--tab-accent': tab.accent } as CSSProperties}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'tab', tabId: tab.id }));
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onClick={() => selectTab(tab.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
-                }}
-                title={tab.title}
-              >
-                <span className="tab-dot" />
-                <span className="tab-title">{tab.title}</span>
-                {tabs.length > 1 && (
-                  <button
-                    type="button"
-                    className="tab-close"
-                    title="关闭终端"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tab.id);
-                    }}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            );
-          })}
-          {overflowTabs.length > 0 && (
-            <button
-              ref={moreBtnRef}
-              type="button"
-              className={`tab-more ${overflowOpen ? 'active' : ''}`}
-              title={`更多标签（${overflowTabs.length}）`}
-              onClick={toggleMore}
-            >
-              ⋯
-            </button>
-          )}
-          <button type="button" className="tab-add" title="新建终端" onClick={addTab}>
-            ＋
-          </button>
-        </div>
+        <div style={{ flex: 1 }} />
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>
@@ -386,37 +332,19 @@ export default function App() {
       <main className="content">
         <Workbench
           layout={layout}
+          panes={panes}
           tabs={tabViews}
-          activeId={activeId}
-          onActivate={setActiveId}
-          onClosePane={handleClosePane}
+          activePaneId={activePaneId}
+          onSelectTab={selectTab}
+          onAddTab={addTab}
+          onCloseTab={closeTab}
           onReady={handleReady}
           onRatio={handleRatio}
-          onSplitAtEdge={handleSplitAtEdge}
-          onMovePane={handleMovePane}
-          onMergePane={handleMergePane}
+          onSplitTab={handleSplitTab}
+          onMoveTab={handleMoveTab}
+          onTabContextMenu={(tabId, x, y) => setMenu({ tabId, x, y })}
         />
       </main>
-
-      {overflowOpen && overflowPos && (
-        <>
-          <div className="tab-more-overlay" onClick={() => setOverflowOpen(false)} />
-          <div className="tab-more-menu" style={{ left: overflowPos.x, top: overflowPos.y }}>
-            {overflowTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`tab-more-item ${tab.id === activeId ? 'active' : ''}`}
-                style={{ '--tab-accent': tab.accent } as CSSProperties}
-                onClick={() => selectOverflowTab(tab.id)}
-              >
-                <span className="tab-dot" />
-                <span className="tab-more-title">{tab.title}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
 
       {menu && menuTab && (
         <TabMenu
@@ -496,10 +424,4 @@ export default function App() {
       )}
     </div>
   );
-}
-
-// layoutLeafIds lists the tab ids currently visible in the layout.
-function layoutLeafIds(node: LayoutNode): string[] {
-  if (node.kind === 'leaf') return [node.tabId];
-  return [...layoutLeafIds(node.a), ...layoutLeafIds(node.b)];
 }
