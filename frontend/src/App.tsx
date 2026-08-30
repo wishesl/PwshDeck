@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Events, Window } from '@wailsio/runtime';
 import {
   DockviewReact,
+  type BuiltInContextMenuItem,
   type DockviewApi,
   type DockviewReadyEvent,
+  type GetTabContextMenuItemsParams,
+  type IContextMenuItemComponentProps,
   type IDockviewPanelProps,
+  type ReactContextMenuItemConfig,
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import McpPanel from './components/McpPanel';
+import { TAB_COLORS } from './components/TabMenu';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import './App.css';
 
@@ -24,6 +29,59 @@ type TerminalParams = { tabId: string; accent: string; pwd: string };
 
 let uid = 0;
 const nextTabId = () => `tab-${++uid}`;
+
+function RenameMenuItem({ panel, close, componentProps }: IContextMenuItemComponentProps) {
+  const onRename = (componentProps as { onRename?: (id: string, t: string) => void })?.onRename;
+  const [val, setVal] = useState(panel.api.title ?? '');
+  const commit = () => {
+    const t = val.trim();
+    if (t) onRename?.(panel.id, t);
+    close();
+  };
+  return (
+    <div className="ctx-item ctx-rename" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <input
+        value={val}
+        autoFocus
+        placeholder="重命名"
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            close();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function AccentMenuItem({ panel, close, componentProps }: IContextMenuItemComponentProps) {
+  const { onAccent, current } = (componentProps ?? {}) as {
+    onAccent?: (id: string, c: string) => void;
+    current?: string;
+  };
+  return (
+    <div className="ctx-item ctx-accent" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      {TAB_COLORS.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          className={`ctx-color ${c.value === current ? 'selected' : ''}`}
+          style={{ background: c.value }}
+          title={c.name}
+          onClick={() => {
+            onAccent?.(panel.id, c.value);
+            close();
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -56,6 +114,26 @@ export default function App() {
     WindowManager.SetTabPrefs(
       list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
     ).catch(() => {});
+  };
+
+  const renameTabRef = useRef<(tabId: string, title: string) => void>(() => {});
+  renameTabRef.current = (tabId, title) => {
+    const next = tabsRef.current.map((t) => (t.id === tabId ? { ...t, title } : t));
+    setTabs(next);
+    persistTabsRef.current(next);
+    apiRef.current?.getPanel(tabId)?.api.setTitle(title);
+  };
+
+  const accentTabRef = useRef<(tabId: string, accent: string) => void>(() => {});
+  accentTabRef.current = (tabId, accent) => {
+    const next = tabsRef.current.map((t) => (t.id === tabId ? { ...t, accent } : t));
+    setTabs(next);
+    persistTabsRef.current(next);
+    const panel = apiRef.current?.getPanel(tabId);
+    if (panel) {
+      const p = (panel.params ?? {}) as TerminalParams;
+      panel.api.updateParameters({ tabId, accent, pwd: p.pwd });
+    }
   };
 
   // ---- Close-to-tray vs exit prompt -------------------------------------
@@ -186,6 +264,29 @@ export default function App() {
     [],
   );
 
+  const getTabContextMenuItems = useMemo(
+    () =>
+      (params: GetTabContextMenuItemsParams): (BuiltInContextMenuItem | ReactContextMenuItemConfig)[] => {
+        const p = (params.panel.params ?? {}) as TerminalParams;
+        return [
+          {
+            component: RenameMenuItem,
+            componentProps: { onRename: (id: string, t: string) => renameTabRef.current(id, t) },
+          },
+          {
+            component: AccentMenuItem,
+            componentProps: {
+              onAccent: (id: string, c: string) => accentTabRef.current(id, c),
+              current: p.accent,
+            },
+          },
+          'separator',
+          'close',
+        ];
+      },
+    [],
+  );
+
   const onReady = (event: DockviewReadyEvent) => {
     apiRef.current = event.api;
     setDockReady(true);
@@ -276,7 +377,12 @@ export default function App() {
 
       <main className="content">
         <div style={{ width: '100%', height: '100%' }}>
-          <DockviewReact className="dockview-theme-abyss" onReady={onReady} components={components} />
+          <DockviewReact
+            className="dockview-theme-abyss"
+            onReady={onReady}
+            components={components}
+            getTabContextMenuItems={getTabContextMenuItems}
+          />
         </div>
       </main>
 

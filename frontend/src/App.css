@@ -538,3 +538,72 @@
 .close-dialog-remember input {
   accent-color: var(--accent);
 }
+
+/* ---- dockview theme: match the app's translucent dark style ------------ */
+
+.dockview-theme-abyss {
+  --dv-group-view-background-color: transparent;
+  --dv-tabs-and-actions-container-background-color: rgba(14, 17, 27, 0.55);
+  --dv-activegroup-visiblepanel-tab-background-color: rgba(255, 255, 255, 0.08);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: rgba(255, 255, 255, 0.08);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-tab-divider-color: transparent;
+  --dv-activegroup-visiblepanel-tab-color: #e8eaf0;
+  --dv-activegroup-hiddenpanel-tab-color: #9aa0b0;
+  --dv-inactivegroup-visiblepanel-tab-color: #d4d4d4;
+  --dv-inactivegroup-hiddenpanel-tab-color: #9aa0b0;
+  --dv-separator-border: rgba(255, 255, 255, 0.09);
+  --dv-sash-color: rgba(255, 255, 255, 0.09);
+  --dv-active-sash-color: #7aa2f7;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-tabs-and-actions-container-font-size: 12.5px;
+  --dv-tab-font-size: 12.5px;
+  --dv-tab-border-radius: 6px;
+}
+
+/* ---- dockview tab context menu items ----------------------------------- */
+
+.ctx-item {
+  padding: 6px;
+}
+
+.ctx-rename input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.ctx-rename input:focus {
+  border-color: var(--accent);
+}
+
+.ctx-accent {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  max-width: 220px;
+}
+
+.ctx-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ctx-color:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.ctx-color.selected {
+  border-color: #fff;
+}
