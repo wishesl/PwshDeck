@@ -42,6 +42,15 @@ export default function TabMenu({ x, y, title, accent, onRename, onAccent, onClo
     }
   };
 
+  // Commit a pending name without closing (used before applying a color, so a
+  // typed name isn't silently dropped when the user clicks a swatch).
+  const commitName = () => {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== title) {
+      onRename(trimmed);
+    }
+  };
+
   // Keep the menu inside the viewport.
   const style = {
     left: Math.max(4, Math.min(x, window.innerWidth - 236)),
@@ -86,7 +95,10 @@ export default function TabMenu({ x, y, title, accent, onRename, onAccent, onClo
                 className={`tab-color ${c.value === accent ? 'selected' : ''}`}
                 style={{ background: c.value }}
                 title={c.name}
-                onClick={() => onAccent(c.value)}
+                onClick={() => {
+                  commitName();
+                  onAccent(c.value);
+                }}
               />
             ))}
           </div>

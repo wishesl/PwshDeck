@@ -52,6 +52,7 @@ export default function App() {
   closeTabRef.current = (tabId) => {
     const next = tabsRef.current.filter((t) => t.id !== tabId);
     if (next.length === tabsRef.current.length) return;
+    tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
   };
@@ -67,6 +68,7 @@ export default function App() {
   const renameTabRef = useRef<(tabId: string, title: string) => void>(() => {});
   renameTabRef.current = (tabId, title) => {
     const next = tabsRef.current.map((t) => (t.id === tabId ? { ...t, title } : t));
+    tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
     apiRef.current?.getPanel(tabId)?.api.setTitle(title);
@@ -75,6 +77,7 @@ export default function App() {
   const accentTabRef = useRef<(tabId: string, accent: string) => void>(() => {});
   accentTabRef.current = (tabId, accent) => {
     const next = tabsRef.current.map((t) => (t.id === tabId ? { ...t, accent } : t));
+    tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
     const panel = apiRef.current?.getPanel(tabId);
@@ -215,18 +218,27 @@ export default function App() {
   const defaultTabComponent = useMemo(
     () => (props: IDockviewDefaultTabProps) => {
       const accent = (props.params as { accent?: string } | undefined)?.accent ?? DEFAULT_ACCENT;
+      // dockview only re-renders the React tab on `params` changes; a title
+      // change fires `onDidTitleChange` instead, so subscribe to keep the label
+      // in sync after a rename.
+      const [title, setTitle] = useState(props.api.title ?? '');
+      useEffect(() => {
+        setTitle(props.api.title ?? '');
+        const disposable = props.api.onDidTitleChange((event) => setTitle(event.title));
+        return () => disposable.dispose();
+      }, [props.api]);
       return (
         <div
           className="pd-tab"
           style={{ '--tab-accent': accent } as CSSProperties}
-          title={props.api.title ?? ''}
+          title={title}
           onContextMenu={(e) => {
             e.preventDefault();
             setTabMenu({ tabId: props.api.id, x: e.clientX, y: e.clientY });
           }}
         >
           <span className="pd-tab-dot" />
-          <span className="pd-tab-title">{props.api.title}</span>
+          <span className="pd-tab-title">{title}</span>
           <button
             type="button"
             className="pd-tab-close"
@@ -269,6 +281,7 @@ export default function App() {
       sessionId: null,
     };
     const next = [...tabsRef.current, tab];
+    tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
   };
