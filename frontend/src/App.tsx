@@ -179,7 +179,7 @@ export default function App() {
     const remaining = pane.tabIds.filter((id) => id !== tabId);
     if (remaining.length === 0) {
       setPanes((prev) => prev.filter((p) => p.id !== pane.id));
-      setLayout((prev) => removeLeaf(prev, pane.id)[0]);
+      setLayout((prev) => removeLeaf(prev, pane.id));
       if (activePaneId === pane.id) {
         const other = panes.find((p) => p.id !== pane.id);
         if (other) setActivePaneId(other.id);
@@ -232,7 +232,7 @@ export default function App() {
     let nextLayout = insertPane(layout, targetPaneId, newPaneId, placement);
     if (remaining.length === 0) {
       nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
-      nextLayout = removeLeaf(nextLayout, sourcePane.id)[0];
+      nextLayout = removeLeaf(nextLayout, sourcePane.id);
     }
     nextPanes = [...nextPanes, newPane];
     setPanes(nextPanes);
@@ -252,7 +252,7 @@ export default function App() {
     let nextLayout = layout;
     if (remaining.length === 0) {
       nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
-      nextLayout = removeLeaf(layout, sourcePane.id)[0];
+      nextLayout = removeLeaf(layout, sourcePane.id);
     }
     setPanes(nextPanes);
     setLayout(nextLayout);

@@ -42,17 +42,27 @@ export function updateSplit(root: LayoutNode, id: string, ratio: number): Layout
   return { ...root, a, b };
 }
 
-// removeLeaf deletes the leaf for `paneId` and collapses its parent.
-export function removeLeaf(root: LayoutNode, paneId: string): [LayoutNode, boolean] {
-  if (root.kind === 'leaf') {
-    return root.paneId === paneId ? [root, true] : [root, false];
+// removeLeaf deletes the leaf for `paneId` and collapses its parent to the
+// remaining child. Callers never remove the last pane, so the root is always a
+// split here.
+export function removeLeaf(root: LayoutNode, paneId: string): LayoutNode {
+  if (root.kind === 'leaf') return root;
+  return prune(root, paneId) ?? root;
+}
+
+// prune returns null when the subtree is the removed leaf itself, otherwise the
+// (possibly collapsed) subtree. A nested split that lost a child is rebuilt,
+// NOT discarded — this is what keeps sibling panes intact on merge.
+function prune(node: LayoutNode, paneId: string): LayoutNode | null {
+  if (node.kind === 'leaf') {
+    return node.paneId === paneId ? null : node;
   }
-  const [a, ra] = removeLeaf(root.a, paneId);
-  if (ra) return [root.b, true];
-  const [b, rb] = removeLeaf(root.b, paneId);
-  if (rb) return [root.a, true];
-  if (a !== root.a || b !== root.b) return [{ ...root, a, b }, false];
-  return [root, false];
+  const a = prune(node.a, paneId);
+  if (a === null) return node.b; // a was the removed leaf → collapse to b
+  const b = prune(node.b, paneId);
+  if (b === null) return node.a; // b was the removed leaf → collapse to a
+  if (a !== node.a || b !== node.b) return { ...node, a, b };
+  return node;
 }
 
 // insertPane inserts a new leaf (newPaneId) adjacent to the target pane at the
