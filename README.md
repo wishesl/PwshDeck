@@ -2,6 +2,16 @@
 
 基于 [Wails v3](https://v3.wails.io/) 的 PowerShell (pwsh) 桌面交互式终端，内置 **MCP (Model Context Protocol)** 服务，让 AI 客户端可以直接创建、操控 pwsh 会话并读取输出。
 
+## 截图
+
+**终端界面**：
+
+![终端界面](doc/shell.jpg)
+
+**MCP 管理界面**：
+
+![MCP 管理界面](doc/mcp.jpg)
+
 ## 功能
 
 - **桌面终端**：xterm.js + Windows ConPTY，pwsh 行为与真实终端完全一致（Tab 补全、PSReadLine、进度条、Ctrl+C…）
