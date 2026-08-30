@@ -33,6 +33,7 @@ export default function App() {
   const [dockReady, setDockReady] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const [closeConfirm, setCloseConfirm] = useState<{ tabId: string } | null>(null);
 
   const apiRef = useRef<DockviewApi | null>(null);
   const tabsRef = useRef<Tab[]>(tabs);
@@ -54,6 +55,8 @@ export default function App() {
     setTabs(next);
     persistTabsRef.current(next);
   };
+  const requestCloseTabRef = useRef<(tabId: string) => void>(() => {});
+  requestCloseTabRef.current = (tabId) => setCloseConfirm({ tabId });
   const persistTabsRef = useRef<(list: Tab[]) => void>(() => {});
   persistTabsRef.current = (list) => {
     WindowManager.SetTabPrefs(
@@ -230,7 +233,7 @@ export default function App() {
             title="关闭"
             onClick={(e) => {
               e.stopPropagation();
-              props.api.close();
+              requestCloseTabRef.current(props.api.id);
             }}
           >
             ×
@@ -277,6 +280,7 @@ export default function App() {
         setMcpOpen(false);
         setClosePromptOpen(false);
         setTabMenu(null);
+        setCloseConfirm(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -284,6 +288,7 @@ export default function App() {
   }, []);
 
   const menuTab = tabMenu ? tabs.find((t) => t.id === tabMenu.tabId) : null;
+  const confirmTab = closeConfirm ? tabs.find((t) => t.id === closeConfirm.tabId) : null;
 
   return (
     <div className="app">
@@ -399,6 +404,37 @@ export default function App() {
                 />
                 本次启动不再提示
               </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {closeConfirm && confirmTab && (
+        <div className="modal-overlay" onClick={() => setCloseConfirm(null)}>
+          <div className="modal close-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>关闭会话</h2>
+            </div>
+            <div className="close-dialog-body">
+              <p className="close-dialog-text">
+                确定关闭会话「<strong className="close-dialog-name">{confirmTab.title}</strong>」吗？
+                该会话正在运行的进程将被终止。
+              </p>
+              <div className="close-dialog-actions">
+                <button type="button" onClick={() => setCloseConfirm(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger"
+                  onClick={() => {
+                    apiRef.current?.getPanel(closeConfirm.tabId)?.api.close();
+                    setCloseConfirm(null);
+                  }}
+                >
+                  关闭会话
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -487,6 +487,10 @@
   line-height: 1.5;
 }
 
+.close-dialog-name {
+  color: var(--text-strong);
+}
+
 .close-dialog-actions {
   display: flex;
   gap: 10px;
@@ -625,6 +629,25 @@
 
 .dv-tab:active {
   cursor: grabbing;
+}
+
+/* Overflow dropdown ("N more tabs") reuses --dv-group-view-background-color,
+   which we set to transparent, so the list becomes see-through. Give it an
+   opaque surface, a border, and row separators. */
+.dv-tabs-overflow-container {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+}
+
+.dv-tabs-overflow-container .dv-tab {
+  border-radius: 6px;
+}
+
+.dv-tabs-overflow-container .dv-tab:not(:last-child) {
+  border-bottom: 1px solid var(--border);
 }
 
 .dv-tab .pd-tab {
