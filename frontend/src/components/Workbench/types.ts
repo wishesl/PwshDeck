@@ -1,63 +1,39 @@
-// Split-pane layout model. The workbench is a binary tree: leaves are terminal
-// panes, split nodes hold exactly two children side-by-side (row) or stacked
-// (column). `ratio` is the size share of the first child (0..1).
+// Split layout model. The layout is a binary tree whose leaves reference tab
+// ids (NOT sessions): tabs live in the tab bar and are always mounted, and the
+// layout only decides which tabs are visible and how they are tiled.
 
 export type Direction = 'row' | 'column';
-
-// Placement describes where a dragged leaf lands relative to its drop target.
 export type Placement = 'left' | 'right' | 'top' | 'bottom';
 
-export interface PaneLeaf {
+export interface LeafNode {
   kind: 'leaf';
-  id: string;
-  title: string;
-  accent: string;
-  pwd: string;
-  sessionId: string | null;
+  tabId: string;
 }
 
-export interface PaneSplit {
+export interface SplitNode {
   kind: 'split';
   id: string;
   direction: Direction;
   ratio: number;
-  a: PaneNode;
-  b: PaneNode;
+  a: LayoutNode;
+  b: LayoutNode;
 }
 
-export type PaneNode = PaneLeaf | PaneSplit;
+export type LayoutNode = LeafNode | SplitNode;
 
 let nodeSeq = 0;
-const nextId = () => `pane-${++nodeSeq}`;
+const nextId = () => `split-${++nodeSeq}`;
 
-export function newLeaf(partial?: Partial<Omit<PaneLeaf, 'kind' | 'id'>>): PaneLeaf {
-  return {
-    kind: 'leaf',
-    id: nextId(),
-    title: partial?.title ?? '终端',
-    accent: partial?.accent ?? '#4f8cff',
-    pwd: partial?.pwd ?? '',
-    sessionId: null,
-  };
+export function leaf(tabId: string): LeafNode {
+  return { kind: 'leaf', tabId };
 }
 
-export function makeSplit(direction: Direction, a: PaneNode, b: PaneNode): PaneSplit {
+export function makeSplit(direction: Direction, a: LayoutNode, b: LayoutNode): SplitNode {
   return { kind: 'split', id: nextId(), direction, ratio: 0.5, a, b };
 }
 
-// updateLeaf replaces the leaf `id` with fn(leaf) (which may be a split).
-export function updateLeaf(root: PaneNode, id: string, fn: (leaf: PaneLeaf) => PaneNode): PaneNode {
-  if (root.kind === 'leaf') {
-    return root.id === id ? fn(root) : root;
-  }
-  const a = updateLeaf(root.a, id, fn);
-  const b = updateLeaf(root.b, id, fn);
-  if (a === root.a && b === root.b) return root;
-  return { ...root, a, b };
-}
-
 // updateSplit sets the ratio of the split node `id`.
-export function updateSplit(root: PaneNode, id: string, ratio: number): PaneNode {
+export function updateSplit(root: LayoutNode, id: string, ratio: number): LayoutNode {
   if (root.kind === 'leaf') return root;
   if (root.id === id) return { ...root, ratio };
   const a = updateSplit(root.a, id, ratio);
@@ -66,69 +42,132 @@ export function updateSplit(root: PaneNode, id: string, ratio: number): PaneNode
   return { ...root, a, b };
 }
 
-// removeLeaf deletes the leaf `id` and collapses its parent to the remaining
-// child. Returns the new root and the removed leaf (or null when absent).
-export function removeLeaf(root: PaneNode, id: string): [PaneNode, PaneLeaf | null] {
+// removeLeaf deletes the leaf for `tabId` and collapses its parent. Returns
+// the new root and whether the tab was found and removed.
+export function removeLeaf(root: LayoutNode, tabId: string): [LayoutNode, boolean] {
   if (root.kind === 'leaf') {
-    return root.id === id ? [root, root] : [root, null];
+    return root.tabId === tabId ? [root, true] : [root, false];
   }
-  const [a, ra] = removeLeaf(root.a, id);
-  if (ra) return [root.b, ra];
-  const [b, rb] = removeLeaf(root.b, id);
-  if (rb) return [root.a, rb];
-  if (a !== root.a || b !== root.b) return [{ ...root, a, b }, null];
-  return [root, null];
+  const [a, ra] = removeLeaf(root.a, tabId);
+  if (ra) return [root.b, true];
+  const [b, rb] = removeLeaf(root.b, tabId);
+  if (rb) return [root.a, true];
+  if (a !== root.a || b !== root.b) return [{ ...root, a, b }, false];
+  return [root, false];
 }
 
-// flattenLeaves lists all leaves in depth-first order (for persistence).
-export function flattenLeaves(root: PaneNode): PaneLeaf[] {
-  if (root.kind === 'leaf') return [root];
-  return [...flattenLeaves(root.a), ...flattenLeaves(root.b)];
-}
-
-export function countLeaves(root: PaneNode): number {
-  if (root.kind === 'leaf') return 1;
-  return countLeaves(root.a) + countLeaves(root.b);
-}
-
-// moveLeaf detaches the source leaf and re-attaches it next to the target
-// leaf, splitting the target in the given placement. Returns the new tree
-// (unchanged if either id is missing or they are the same).
+// moveLeaf detaches the source tab and re-attaches it next to the target tab
+// at the given placement.
 export function moveLeaf(
-  root: PaneNode,
-  sourceId: string,
-  targetId: string,
+  root: LayoutNode,
+  sourceTabId: string,
+  targetTabId: string,
   placement: Placement,
-): PaneNode {
-  if (sourceId === targetId) return root;
-  const [pruned, removed] = removeLeaf(root, sourceId);
+): LayoutNode {
+  if (sourceTabId === targetTabId) return root;
+  const [pruned, removed] = removeLeaf(root, sourceTabId);
   if (!removed) return root;
-  return insertLeaf(pruned, targetId, removed, placement);
+  return insertLeaf(pruned, targetTabId, sourceTabId, placement);
 }
 
-function insertLeaf(root: PaneNode, targetId: string, leaf: PaneLeaf, placement: Placement): PaneNode {
+function insertLeaf(
+  root: LayoutNode,
+  targetTabId: string,
+  sourceTabId: string,
+  placement: Placement,
+): LayoutNode {
   if (root.kind === 'leaf') {
-    if (root.id !== targetId) return root;
+    if (root.tabId !== targetTabId) return root;
     switch (placement) {
       case 'left':
-        return makeSplit('row', leaf, root);
+        return makeSplit('row', leaf(sourceTabId), root);
       case 'right':
-        return makeSplit('row', root, leaf);
+        return makeSplit('row', root, leaf(sourceTabId));
       case 'top':
-        return makeSplit('column', leaf, root);
+        return makeSplit('column', leaf(sourceTabId), root);
       case 'bottom':
-        return makeSplit('column', root, leaf);
+        return makeSplit('column', root, leaf(sourceTabId));
     }
   }
-  const a = insertLeaf(root.a, targetId, leaf, placement);
-  const b = insertLeaf(root.b, targetId, leaf, placement);
+  const a = insertLeaf(root.a, targetTabId, sourceTabId, placement);
+  const b = insertLeaf(root.b, targetTabId, sourceTabId, placement);
   if (a === root.a && b === root.b) return root;
   return { ...root, a, b };
 }
 
-// buildColumn folds a list of leaves into a balanced column (stacked) split.
-export function buildColumn(leaves: PaneLeaf[]): PaneNode {
-  if (leaves.length === 1) return leaves[0];
-  const mid = Math.floor(leaves.length / 2);
-  return makeSplit('column', buildColumn(leaves.slice(0, mid)), buildColumn(leaves.slice(mid)));
+// addAtEdge splits the whole layout, placing `tabId` on the given edge. If the
+// tab is already visible it is first removed, so it ends up moved to the edge.
+export function addAtEdge(root: LayoutNode, tabId: string, placement: Placement): LayoutNode {
+  let base = root;
+  if (containsTab(base, tabId)) {
+    base = removeLeaf(base, tabId)[0];
+  }
+  switch (placement) {
+    case 'left':
+      return makeSplit('row', leaf(tabId), base);
+    case 'right':
+      return makeSplit('row', base, leaf(tabId));
+    case 'top':
+      return makeSplit('column', leaf(tabId), base);
+    case 'bottom':
+      return makeSplit('column', base, leaf(tabId));
+  }
+}
+
+export function flattenTabs(root: LayoutNode): string[] {
+  if (root.kind === 'leaf') return [root.tabId];
+  return [...flattenTabs(root.a), ...flattenTabs(root.b)];
+}
+
+export function countLeaves(root: LayoutNode): number {
+  if (root.kind === 'leaf') return 1;
+  return countLeaves(root.a) + countLeaves(root.b);
+}
+
+export function containsTab(root: LayoutNode, tabId: string): boolean {
+  if (root.kind === 'leaf') return root.tabId === tabId;
+  return containsTab(root.a, tabId) || containsTab(root.b, tabId);
+}
+
+// ---- Geometry (absolute positioning keeps all terminals mounted) --------
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number; // fractions of the container (0..1)
+}
+
+export interface DividerPos {
+  id: string;
+  direction: Direction;
+  x: number; // boundary centre, fraction
+  y: number;
+}
+
+export interface LayoutGeometry {
+  leaves: { tabId: string; rect: Rect }[];
+  dividers: DividerPos[];
+}
+
+export function computeLayout(node: LayoutNode, r: Rect): LayoutGeometry {
+  if (node.kind === 'leaf') {
+    return { leaves: [{ tabId: node.tabId, rect: r }], dividers: [] };
+  }
+  const leaves: { tabId: string; rect: Rect }[] = [];
+  const dividers: DividerPos[] = [];
+  if (node.direction === 'row') {
+    const aw = r.w * node.ratio;
+    const a = computeLayout(node.a, { x: r.x, y: r.y, w: aw, h: r.h });
+    const b = computeLayout(node.b, { x: r.x + aw, y: r.y, w: r.w - aw, h: r.h });
+    leaves.push(...a.leaves, ...b.leaves);
+    dividers.push({ id: node.id, direction: 'row', x: r.x + aw, y: r.y + r.h / 2 }, ...a.dividers, ...b.dividers);
+  } else {
+    const ah = r.h * node.ratio;
+    const a = computeLayout(node.a, { x: r.x, y: r.y, w: r.w, h: ah });
+    const b = computeLayout(node.b, { x: r.x, y: r.y + ah, w: r.w, h: r.h - ah });
+    leaves.push(...a.leaves, ...b.leaves);
+    dividers.push({ id: node.id, direction: 'column', x: r.x + r.w / 2, y: r.y + ah }, ...a.dividers, ...b.dividers);
+  }
+  return { leaves, dividers };
 }

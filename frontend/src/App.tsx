@@ -1,43 +1,56 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Events, Window } from '@wailsio/runtime';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import McpPanel from './components/McpPanel';
-import Workbench from './components/Workbench/Workbench';
+import TabMenu from './components/TabMenu';
 import { DEFAULT_ACCENT } from './components/Terminal';
+import Workbench, { type TabView } from './components/Workbench/Workbench';
 import {
-  buildColumn,
-  countLeaves,
-  flattenLeaves,
-  makeSplit,
+  addAtEdge,
+  leaf,
   moveLeaf,
-  newLeaf,
   removeLeaf,
-  updateLeaf,
   updateSplit,
-  type Direction,
-  type PaneNode,
+  type LayoutNode,
   type Placement,
 } from './components/Workbench/types';
 import './App.css';
 
-export default function App() {
-  const [root, setRoot] = useState<PaneNode>(() => newLeaf({ title: '终端1' }));
-  const [loaded, setLoaded] = useState(false);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [mcpOpen, setMcpOpen] = useState(false);
+type Tab = {
+  id: string;
+  title: string;
+  accent: string;
+  pwd: string;
+  sessionId: string | null;
+};
 
-  // Latest tree for deferred handlers (debounced pwd persist, unload).
-  const rootRef = useRef(root);
+type MenuState = { tabId: string; x: number; y: number };
+
+const MAX_VISIBLE_TABS = 5;
+
+let uid = 0;
+const nextTabId = () => `tab-${++uid}`;
+
+export default function App() {
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [tabsLoaded, setTabsLoaded] = useState(false);
+  const [activeId, setActiveId] = useState('');
+  const [layout, setLayout] = useState<LayoutNode>(leaf(''));
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const tabSeqRef = useRef(1);
+  const tabsRef = useRef<Tab[]>(tabs);
   const pwdTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    rootRef.current = root;
-  }, [root]);
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   // ---- Close-to-tray vs exit prompt -------------------------------------
   const [closePromptOpen, setClosePromptOpen] = useState(false);
   const [dontAskAgain, setDontAskAgain] = useState(false);
-  // In-memory only: remembering a choice lasts for this launch (the webview
-  // lives as long as the app) and the prompt returns on the next launch.
   const rememberedCloseAction = useRef<'tray' | 'exit' | null>(null);
   const windowNameRef = useRef('');
   const closeActionRef = useRef<() => void>(() => {});
@@ -46,12 +59,10 @@ export default function App() {
     setClosePromptOpen(false);
     WindowManager.HideToTray().catch(() => {});
   };
-
   const quitApp = () => {
     setClosePromptOpen(false);
     WindowManager.QuitApp().catch(() => {});
   };
-
   const applyCloseAction = () => {
     const remembered = rememberedCloseAction.current;
     if (remembered === 'tray') hideToTray();
@@ -63,14 +74,12 @@ export default function App() {
   };
   closeActionRef.current = applyCloseAction;
 
-  // Native closes (Alt+F4, taskbar "Close window") arrive as a window-scoped
-  // event; the frameless close button calls applyCloseAction directly.
   useEffect(() => {
     (async () => {
       try {
         windowNameRef.current = await Window.Name();
       } catch {
-        /* browser dev: no window identity */
+        /* browser dev */
       }
     })();
     const off = Events.On('window-close-requested', (event: any) => {
@@ -81,29 +90,26 @@ export default function App() {
     return off;
   }, []);
 
-  // Persist the pane prefs (titles + accents + last working directory). The
-  // split layout itself is not persisted yet.
-  const persistRoot = (r: PaneNode) => {
+  // ---- Persistence ------------------------------------------------------
+  const persistTabs = (list: Tab[]) => {
     WindowManager.SetTabPrefs(
-      flattenLeaves(r).map((l) => ({ title: l.title, accent: l.accent, pwd: l.pwd })),
+      list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
     ).catch(() => {});
   };
 
-  // Track each session's working directory (term_pwd events) and persist it,
-  // debounced so prompt re-renders do not spam config IO.
   useEffect(() => {
     const off = Events.On('term_pwd', (event: any) => {
       const payload = event?.data;
       if (!payload || typeof payload.id !== 'string' || typeof payload.data !== 'string') return;
-      const leaf = flattenLeaves(rootRef.current).find((l) => l.sessionId === payload.id);
-      if (!leaf || leaf.pwd === payload.data) return;
-      setRoot((prev) => updateLeaf(prev, leaf.id, (l) => ({ ...l, pwd: payload.data })));
+      const current = tabsRef.current.find((t) => t.sessionId === payload.id);
+      if (!current || current.pwd === payload.data) return;
+      setTabs((prev) =>
+        prev.map((t) => (t.sessionId === payload.id && t.pwd !== payload.data ? { ...t, pwd: payload.data } : t)),
+      );
       if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
-      pwdTimerRef.current = window.setTimeout(() => {
-        persistRoot(rootRef.current);
-      }, 1500);
+      pwdTimerRef.current = window.setTimeout(() => persistTabs(tabsRef.current), 1500);
     });
-    const onUnload = () => persistRoot(rootRef.current);
+    const onUnload = () => persistTabs(tabsRef.current);
     window.addEventListener('beforeunload', onUnload);
     return () => {
       off();
@@ -112,7 +118,6 @@ export default function App() {
     };
   }, []);
 
-  // Restore persisted pane prefs on startup (as a stacked column split).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -123,86 +128,121 @@ export default function App() {
         /* browser dev or first run */
       }
       if (cancelled) return;
-      let next: PaneNode;
-      if (prefs.length === 0) {
-        next = newLeaf({ title: '终端1' });
-      } else {
-        const leaves = prefs.map((p, i) =>
-          newLeaf({
-            title: p.title || `终端${i + 1}`,
-            accent: p.accent || DEFAULT_ACCENT,
-            pwd: p.pwd || '',
-          }),
-        );
-        next = buildColumn(leaves);
-      }
-      setRoot(next);
-      setActiveId(flattenLeaves(next)[0].id);
-      setLoaded(true);
+      const restored: Tab[] =
+        prefs.length > 0
+          ? prefs.map((p, i) => ({
+              id: nextTabId(),
+              title: p.title || `终端${i + 1}`,
+              accent: p.accent || DEFAULT_ACCENT,
+              pwd: p.pwd || '',
+              sessionId: null,
+            }))
+          : [{ id: nextTabId(), title: '终端1', accent: DEFAULT_ACCENT, pwd: '', sessionId: null }];
+      tabSeqRef.current = restored.length;
+      setTabs(restored);
+      setActiveId(restored[0].id);
+      setLayout(leaf(restored[0].id));
+      setTabsLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const handleSplit = (leafId: string, direction: Direction) => {
-    const nextLeaf = newLeaf({ title: `终端${countLeaves(root) + 1}` });
-    const next = updateLeaf(root, leafId, (leaf) => makeSplit(direction, leaf, nextLeaf));
-    setRoot(next);
-    setActiveId(nextLeaf.id);
-    persistRoot(next);
+  // ---- Tab operations ---------------------------------------------------
+  const addTab = () => {
+    tabSeqRef.current += 1;
+    const tab: Tab = {
+      id: nextTabId(),
+      title: `终端${tabSeqRef.current}`,
+      accent: DEFAULT_ACCENT,
+      pwd: '',
+      sessionId: null,
+    };
+    const next = [...tabs, tab];
+    setTabs(next);
+    setActiveId(tab.id);
+    setLayout(leaf(tab.id));
+    persistTabs(next);
   };
 
-  // New session: split the active pane (or the first pane) to the right.
-  const handleNewSession = () => {
-    const leaves = flattenLeaves(root);
-    const target = leaves.find((l) => l.id === activeId) ?? leaves[0];
-    handleSplit(target.id, 'row');
-  };
+  const closeTab = (id: string) => {
+    if (tabs.length <= 1) return;
+    const idx = tabs.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const next = tabs.filter((t) => t.id !== id);
+    setTabs(next);
+    persistTabs(next);
 
-  const handleClose = (leafId: string) => {
-    if (countLeaves(root) <= 1) return; // keep at least one pane
-    const [next] = removeLeaf(root, leafId);
-    setRoot(next);
-    persistRoot(next);
-    if (activeId === leafId) {
-      setActiveId(flattenLeaves(next)[0].id);
+    const visibleIds = layoutLeafIds(layout);
+    if (visibleIds.includes(id)) {
+      if (visibleIds.length === 1) {
+        // It was the only visible tab: switch to the fallback single view.
+        setLayout(leaf(next[Math.min(idx, next.length - 1)].id));
+      } else {
+        setLayout(removeLeaf(layout, id)[0]);
+      }
+    }
+    if (activeId === id) {
+      setActiveId(next[Math.min(idx, next.length - 1)].id);
     }
   };
 
-  const handleReady = (leafId: string, sessionId: string) => {
-    setRoot((prev) => updateLeaf(prev, leafId, (l) => ({ ...l, sessionId })));
+  const selectTab = (id: string) => {
+    setActiveId(id);
+    setLayout(leaf(id));
+  };
+
+  const renameTab = (id: string, title: string) => {
+    const next = tabs.map((t) => (t.id === id ? { ...t, title } : t));
+    setTabs(next);
+    persistTabs(next);
+  };
+
+  const setTabAccent = (id: string, accent: string) => {
+    const next = tabs.map((t) => (t.id === id ? { ...t, accent } : t));
+    setTabs(next);
+    persistTabs(next);
+  };
+
+  // ---- Layout operations ------------------------------------------------
+  const handleReady = (tabId: string, sessionId: string) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
   };
 
   const handleRatio = (splitId: string, ratio: number) => {
-    setRoot((prev) => updateSplit(prev, splitId, ratio));
+    setLayout((prev) => updateSplit(prev, splitId, ratio));
   };
 
-  const handleMove = (sourceId: string, targetId: string, placement: Placement) => {
-    const next = moveLeaf(root, sourceId, targetId, placement);
-    if (next === root) return;
-    setRoot(next);
-    persistRoot(next);
-    setActiveId(sourceId);
+  const handleSplitAtEdge = (tabId: string, placement: Placement) => {
+    setLayout((prev) => addAtEdge(prev, tabId, placement));
+    setActiveId(tabId);
   };
 
-  // Merge: dropping a pane in the centre of another removes it (closes its
-  // session) and collapses the split — "dragging back" undoes the split.
-  const handleMerge = (sourceId: string) => {
-    if (countLeaves(root) <= 1) return;
-    const [next, removed] = removeLeaf(root, sourceId);
-    if (!removed) return;
-    setRoot(next);
-    persistRoot(next);
-    if (activeId === sourceId) {
-      setActiveId(flattenLeaves(next)[0].id);
-    }
+  const handleClosePane = (tabId: string) => {
+    setLayout((prev) => {
+      const next = removeLeaf(prev, tabId)[0];
+      return next === prev ? prev : next;
+    });
+  };
+
+  const handleMovePane = (sourceId: string, targetId: string, placement: Placement) => {
+    setLayout((prev) => moveLeaf(prev, sourceId, targetId, placement));
+  };
+
+  const handleMergePane = (sourceId: string) => {
+    setLayout((prev) => {
+      const next = removeLeaf(prev, sourceId)[0];
+      return next === prev ? prev : next;
+    });
   };
 
   // Esc closes whichever overlay is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        setMenu(null);
+        setOverflowOpen(false);
         setMcpOpen(false);
         setClosePromptOpen(false);
       }
@@ -211,11 +251,41 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Do not mount terminals until the persisted prefs are known, so no shell is
-  // started and immediately torn down during restoration.
-  if (!loaded) {
+  // ---- Derived ----------------------------------------------------------
+  const visibleTabs = tabs.slice(0, MAX_VISIBLE_TABS);
+  const overflowTabs = tabs.slice(MAX_VISIBLE_TABS);
+  const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
+
+  const toggleMore = () => {
+    if (!overflowOpen && moreBtnRef.current) {
+      const r = moreBtnRef.current.getBoundingClientRect();
+      setOverflowPos({
+        x: Math.max(4, Math.min(r.left, window.innerWidth - 220)),
+        y: Math.max(4, Math.min(r.bottom + 6, window.innerHeight - 240)),
+      });
+    }
+    setOverflowOpen((o) => !o);
+  };
+
+  const selectOverflowTab = (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (!tab) return;
+    setTabs([tab, ...tabs.filter((t) => t.id !== id)]);
+    selectTab(id);
+    setOverflowOpen(false);
+  };
+
+  if (!tabsLoaded) {
     return <div className="app" />;
   }
+
+  const tabViews: TabView[] = tabs.map((t) => ({
+    id: t.id,
+    title: t.title,
+    accent: t.accent,
+    pwd: t.pwd,
+    sessionId: t.sessionId,
+  }));
 
   return (
     <div className="app">
@@ -223,10 +293,59 @@ export default function App() {
         <div className="brand">
           Pwsh<span className="brand-accent">Deck</span>
         </div>
-        <div style={{ flex: 1 }} />
-        <button type="button" className="new-session-btn" title="新建会话" onClick={handleNewSession}>
-          ＋ 新建会话
-        </button>
+        <div className="tab-bar">
+          {visibleTabs.map((tab) => {
+            const active = tab.id === activeId;
+            return (
+              <div
+                key={tab.id}
+                className={`tab ${active ? 'active' : ''}`}
+                style={{ '--tab-accent': tab.accent } as CSSProperties}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'tab', tabId: tab.id }));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onClick={() => selectTab(tab.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+                }}
+                title={tab.title}
+              >
+                <span className="tab-dot" />
+                <span className="tab-title">{tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    type="button"
+                    className="tab-close"
+                    title="关闭终端"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {overflowTabs.length > 0 && (
+            <button
+              ref={moreBtnRef}
+              type="button"
+              className={`tab-more ${overflowOpen ? 'active' : ''}`}
+              title={`更多标签（${overflowTabs.length}）`}
+              onClick={toggleMore}
+            >
+              ⋯
+            </button>
+          )}
+          <button type="button" className="tab-add" title="新建终端" onClick={addTab}>
+            ＋
+          </button>
+        </div>
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>
@@ -266,16 +385,56 @@ export default function App() {
 
       <main className="content">
         <Workbench
-          node={root}
+          layout={layout}
+          tabs={tabViews}
           activeId={activeId}
           onActivate={setActiveId}
-          onClose={handleClose}
+          onClosePane={handleClosePane}
           onReady={handleReady}
           onRatio={handleRatio}
-          onMove={handleMove}
-          onMerge={handleMerge}
+          onSplitAtEdge={handleSplitAtEdge}
+          onMovePane={handleMovePane}
+          onMergePane={handleMergePane}
         />
       </main>
+
+      {overflowOpen && overflowPos && (
+        <>
+          <div className="tab-more-overlay" onClick={() => setOverflowOpen(false)} />
+          <div className="tab-more-menu" style={{ left: overflowPos.x, top: overflowPos.y }}>
+            {overflowTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab-more-item ${tab.id === activeId ? 'active' : ''}`}
+                style={{ '--tab-accent': tab.accent } as CSSProperties}
+                onClick={() => selectOverflowTab(tab.id)}
+              >
+                <span className="tab-dot" />
+                <span className="tab-more-title">{tab.title}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {menu && menuTab && (
+        <TabMenu
+          x={menu.x}
+          y={menu.y}
+          title={menuTab.title}
+          accent={menuTab.accent}
+          onRename={(name) => {
+            renameTab(menu.tabId, name);
+            setMenu(null);
+          }}
+          onAccent={(color) => {
+            setTabAccent(menu.tabId, color);
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
 
       {closePromptOpen && (
         <div className="modal-overlay" onClick={() => setClosePromptOpen(false)}>
@@ -337,4 +496,10 @@ export default function App() {
       )}
     </div>
   );
+}
+
+// layoutLeafIds lists the tab ids currently visible in the layout.
+function layoutLeafIds(node: LayoutNode): string[] {
+  if (node.kind === 'leaf') return [node.tabId];
+  return [...layoutLeafIds(node.a), ...layoutLeafIds(node.b)];
 }

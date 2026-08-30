@@ -1,62 +1,29 @@
-/* Workbench split-pane layout. A window is a binary tree of terminal panes
-   separated by draggable dividers. Design tokens come from App.css `:root`. */
+/* Workbench split-pane layout. Terminals are mounted flat and absolutely
+   positioned from the layout tree, so sessions survive any re-layout. Design
+   tokens come from App.css `:root`. */
 
-.wb-split {
-  display: flex;
+.wb-root {
+  position: relative;
   width: 100%;
   height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-
-.wb-row {
-  flex-direction: row;
-}
-
-.wb-col {
-  flex-direction: column;
-}
-
-.wb-child {
-  min-width: 0;
-  min-height: 0;
   overflow: hidden;
-  position: relative;
-}
-
-.wb-divider {
-  flex: 0 0 5px;
-  background: var(--border);
-  transition: background 0.12s ease;
-}
-
-.wb-divider:hover {
-  background: var(--accent);
-}
-
-.wb-divider-row {
-  cursor: col-resize;
-}
-
-.wb-divider-col {
-  cursor: row-resize;
+  --wails-draggable: no-drag;
 }
 
 .wb-pane {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
-  position: relative;
+  overflow: hidden;
 }
 
 .wb-pane.wb-dragging {
   opacity: 0.55;
 }
 
-/* Centre-drop target: merging into this pane (the dragged pane closes). */
+/* Centre-drop target: merging into this pane (the dragged pane is unsplit). */
 .wb-pane.wb-merge::after {
   content: '';
   position: absolute;
@@ -141,7 +108,36 @@
   position: relative;
 }
 
-/* Drop indicator: a coloured strip on the edge where the dragged pane lands. */
+/* Draggable divider overlay, centred on the boundary between two panes. */
+.wb-divider {
+  position: absolute;
+  background: var(--border);
+  z-index: 10;
+  transition: background 0.12s ease;
+}
+
+.wb-divider:hover {
+  background: var(--accent);
+}
+
+.wb-divider-row {
+  width: 5px;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.wb-divider-col {
+  height: 5px;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+
+/* Drop indicators -------------------------------------------------------- */
+
 .wb-drop-strip {
   position: absolute;
   background: var(--accent);
@@ -176,4 +172,40 @@
   left: 0;
   right: 0;
   height: 3px;
+}
+
+.wb-root-strip {
+  position: absolute;
+  background: var(--accent);
+  z-index: 40;
+  pointer-events: none;
+  box-shadow: 0 0 10px rgba(122, 162, 247, 0.8);
+}
+
+.wb-root-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+}
+
+.wb-root-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 4px;
+}
+
+.wb-root-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+}
+
+.wb-root-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
 }
