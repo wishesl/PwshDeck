@@ -618,6 +618,13 @@
 
 .dv-tab {
   position: relative;
+  /* Override dockview's default `cursor: pointer` so the whole tab (including
+     its padding ring around .pd-tab) reads as draggable. */
+  cursor: grab;
+}
+
+.dv-tab:active {
+  cursor: grabbing;
 }
 
 .dv-tab .pd-tab {
@@ -639,10 +646,6 @@
     background 0.12s ease,
     color 0.12s ease,
     border-color 0.12s ease;
-}
-
-.dv-tab .pd-tab:active {
-  cursor: grabbing;
 }
 
 .dv-tab .pd-tab:hover {
