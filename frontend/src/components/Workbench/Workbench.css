@@ -1,93 +1,52 @@
-/* Workbench split-pane layout. Each pane holds a stack of tabs (one active);
-   the layout tree only tiles the panes. Design tokens come from App.css. */
+/* Workbench: terminals are mounted flat and absolutely positioned, so a tab
+   moving between panes never remounts its terminal (session content survives).
+   Design tokens come from App.css `:root`. */
 
 .wb-root {
+  position: relative;
   width: 100%;
   height: 100%;
+  overflow: hidden;
   --wails-draggable: no-drag;
 }
 
-.wb-split {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-
-.wb-row {
-  flex-direction: row;
-}
-
-.wb-col {
-  flex-direction: column;
-}
-
-.wb-child {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
-
-.wb-divider {
-  flex: 0 0 5px;
-  background: var(--border);
-  transition: background 0.12s ease;
-}
-
-.wb-divider:hover {
-  background: var(--accent);
-}
-
-.wb-divider-row {
-  cursor: col-resize;
-}
-
-.wb-divider-col {
-  cursor: row-resize;
-}
-
-/* ---- Pane -------------------------------------------------------------- */
-
-.wb-pane {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  position: relative;
-}
-
-.wb-pane.active .wb-pane-tabs {
-  background: rgba(255, 255, 255, 0.05);
-}
+/* ---- Per-pane tab bar -------------------------------------------------- */
 
 .wb-pane-tabs {
+  position: absolute;
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 28px;
   padding: 0 4px;
-  flex: none;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
   user-select: none;
+  z-index: 5;
   --wails-draggable: no-drag;
+}
+
+.wb-pane-tabs.active {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .wb-pane-tabs::-webkit-scrollbar {
   height: 4px;
 }
 
+.wb-pane-tabs.wb-tabs-merge {
+  background: rgba(122, 162, 247, 0.22);
+  border-bottom-color: var(--accent);
+}
+
 .wb-tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px 4px 10px;
+  padding: 3px 8px 3px 10px;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
@@ -173,23 +132,45 @@
   background: var(--accent-soft);
 }
 
-.wb-pane-body {
-  flex: 1;
+/* ---- Terminal wrapper -------------------------------------------------- */
+
+.wb-term-wrap {
+  position: absolute;
+  overflow: hidden;
+  min-width: 0;
   min-height: 0;
-  position: relative;
 }
 
-.wb-tab-view {
-  width: 100%;
+/* ---- Draggable divider overlay ---------------------------------------- */
+
+.wb-divider {
+  position: absolute;
+  background: var(--border);
+  z-index: 10;
+  transition: background 0.12s ease;
 }
 
-/* Merge drop target: dropping a tab onto this pane's tab bar. */
-.wb-pane-tabs.wb-tabs-merge {
-  background: rgba(122, 162, 247, 0.22);
-  border-bottom-color: var(--accent);
+.wb-divider:hover {
+  background: var(--accent);
 }
 
-/* Drop indicators -------------------------------------------------------- */
+.wb-divider-row {
+  width: 5px;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  cursor: col-resize;
+}
+
+.wb-divider-col {
+  height: 5px;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  cursor: row-resize;
+}
+
+/* ---- Drop indicators --------------------------------------------------- */
 
 .wb-drop-strip {
   position: absolute;

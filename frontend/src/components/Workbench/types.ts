@@ -101,3 +101,48 @@ export function countLeaves(root: LayoutNode): number {
   if (root.kind === 'leaf') return 1;
   return countLeaves(root.a) + countLeaves(root.b);
 }
+
+// ---- Geometry (terminals stay mounted; only positions change) ----------
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number; // fractions of the container (0..1)
+}
+
+export interface DividerPos {
+  id: string;
+  direction: Direction;
+  x: number; // boundary centre, fraction
+  y: number;
+  size: number; // the split's width (row) or height (column), fraction
+  ratio: number; // the split's current ratio
+}
+
+export interface LayoutGeometry {
+  leaves: { paneId: string; rect: Rect }[];
+  dividers: DividerPos[];
+}
+
+export function computeLayout(node: LayoutNode, r: Rect): LayoutGeometry {
+  if (node.kind === 'leaf') {
+    return { leaves: [{ paneId: node.paneId, rect: r }], dividers: [] };
+  }
+  const leaves: { paneId: string; rect: Rect }[] = [];
+  const dividers: DividerPos[] = [];
+  if (node.direction === 'row') {
+    const aw = r.w * node.ratio;
+    const a = computeLayout(node.a, { x: r.x, y: r.y, w: aw, h: r.h });
+    const b = computeLayout(node.b, { x: r.x + aw, y: r.y, w: r.w - aw, h: r.h });
+    leaves.push(...a.leaves, ...b.leaves);
+    dividers.push({ id: node.id, direction: 'row', x: r.x + aw, y: r.y + r.h / 2, size: r.w, ratio: node.ratio }, ...a.dividers, ...b.dividers);
+  } else {
+    const ah = r.h * node.ratio;
+    const a = computeLayout(node.a, { x: r.x, y: r.y, w: r.w, h: ah });
+    const b = computeLayout(node.b, { x: r.x, y: r.y + ah, w: r.w, h: r.h - ah });
+    leaves.push(...a.leaves, ...b.leaves);
+    dividers.push({ id: node.id, direction: 'column', x: r.x + r.w / 2, y: r.y + ah, size: r.h, ratio: node.ratio }, ...a.dividers, ...b.dividers);
+  }
+  return { leaves, dividers };
+}
