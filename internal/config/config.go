@@ -40,7 +40,10 @@ const (
 // TabPref is the persisted UI state of one terminal tab (sessions themselves
 // are not restored — each tab boots a fresh shell on startup).
 type TabPref struct {
-	Title  string `json:"title"`
+	// ID is the stable dockview panel id, so the persisted split layout can be
+	// matched back to the right tab on restore. Empty for legacy entries.
+	ID    string `json:"id"`
+	Title string `json:"title"`
 	Accent string `json:"accent"`
 	// Pwd is the tab's last-known working directory; the restored shell boots
 	// here instead of the user's home directory. Empty means home.
@@ -62,6 +65,10 @@ type Config struct {
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
 	// Tabs holds the terminal tab layout (title + accent color per tab).
 	Tabs []TabPref `json:"tabs"`
+	// Layout is the serialized dockview split layout (JSON from api.toJSON()).
+	// It restores how tabs are arranged into panes on launch. Empty = default
+	// single pane.
+	Layout string `json:"layout"`
 }
 
 // Load reads config.json from the user config directory, falling back to

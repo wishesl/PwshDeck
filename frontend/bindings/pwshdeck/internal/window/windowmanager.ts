@@ -29,6 +29,14 @@ export function CloseWindow(name: string): $CancellablePromise<void> {
 }
 
 /**
+ * GetLayout returns the persisted dockview split layout (JSON). An empty
+ * string means no layout was saved yet and the default single pane is used.
+ */
+export function GetLayout(): $CancellablePromise<string> {
+    return $Call.ByID(613083558);
+}
+
+/**
  * GetTabPrefs returns the persisted terminal tab layout (title + accent per
  * tab). Sessions themselves are not persisted — each tab boots a fresh shell.
  */
@@ -66,6 +74,14 @@ export function NewWindow(): $CancellablePromise<$models.WindowInfo | null> {
  */
 export function QuitApp(): $CancellablePromise<void> {
     return $Call.ByID(2116147254);
+}
+
+/**
+ * SetLayout persists the dockview split layout (JSON from the frontend's
+ * api.toJSON()) so panes are restored on the next launch.
+ */
+export function SetLayout(json: string): $CancellablePromise<void> {
+    return $Call.ByID(499720162, json);
 }
 
 /**

@@ -173,6 +173,20 @@ func (w *WindowManager) SetTabPrefs(prefs []config.TabPref) error {
 	return cfg.Save()
 }
 
+// GetLayout returns the persisted dockview split layout (JSON). An empty
+// string means no layout was saved yet and the default single pane is used.
+func (w *WindowManager) GetLayout() string {
+	return config.Load().Layout
+}
+
+// SetLayout persists the dockview split layout (JSON from the frontend's
+// api.toJSON()) so panes are restored on the next launch.
+func (w *WindowManager) SetLayout(json string) error {
+	cfg := config.Load()
+	cfg.Layout = json
+	return cfg.Save()
+}
+
 // HideToTray hides every window but keeps the app (sessions + MCP server)
 // running in the background. The user restores it from the system tray icon.
 func (w *WindowManager) HideToTray() error {

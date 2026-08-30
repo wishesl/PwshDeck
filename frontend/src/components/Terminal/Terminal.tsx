@@ -14,8 +14,6 @@ export const DEFAULT_ACCENT = '#4f8cff';
 interface TerminalProps {
   /** Tab color: drives the xterm cursor/selection and the container accent. */
   accent?: string;
-  /** Whether this tab is visible; triggers a re-fit when it becomes active. */
-  active?: boolean;
   /** Working directory to boot the shell in ('' = user home). Only used at
    *  mount time, when the tab is restored from a persisted pwd. */
   initialDir?: string;
@@ -42,7 +40,7 @@ function themeFor(accent: string): ITheme {
   };
 }
 
-export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initialDir = '', onReady }: TerminalProps) {
+export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onReady }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -221,27 +219,6 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
       term.options.theme = themeFor(accent);
     }
   }, [accent]);
-
-  // Re-fit when this tab becomes visible (hidden tabs have no size).
-  useEffect(() => {
-    if (!active) return;
-    const timer = setTimeout(() => {
-      const term = termRef.current;
-      const fit = fitRef.current;
-      if (!term || !fit) return;
-      try {
-        fit.fit();
-        const dims = fit.proposeDimensions();
-        const id = sessionIdRef.current;
-        if (dims && id) {
-          SessionManager.Resize(id, dims.cols, dims.rows).catch(() => {});
-        }
-      } catch {
-        /* not ready yet */
-      }
-    }, 40);
-    return () => clearTimeout(timer);
-  }, [active]);
 
   const copySelection = () => {
     const term = termRef.current;

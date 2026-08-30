@@ -6,6 +6,11 @@
  * are not restored — each tab boots a fresh shell on startup).
  */
 export interface TabPref {
+    /**
+     * ID is the stable dockview panel id, so the persisted split layout can be
+     * matched back to the right tab on restore. Empty for legacy entries.
+     */
+    "id": string;
     "title": string;
     "accent": string;
 

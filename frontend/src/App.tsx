@@ -39,6 +39,10 @@ export default function App() {
   const tabsRef = useRef<Tab[]>(tabs);
   const tabSeqRef = useRef(1);
   const pwdTimerRef = useRef<number | null>(null);
+  const layoutRef = useRef<string>('');
+  const layoutAppliedRef = useRef(false);
+  const restoringRef = useRef(false);
+  const layoutTimerRef = useRef<number | null>(null);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
@@ -61,8 +65,17 @@ export default function App() {
   const persistTabsRef = useRef<(list: Tab[]) => void>(() => {});
   persistTabsRef.current = (list) => {
     WindowManager.SetTabPrefs(
-      list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
+      list.map((t) => ({ id: t.id, title: t.title, accent: t.accent, pwd: t.pwd })),
     ).catch(() => {});
+  };
+
+  // Persist the dockview split layout (arrangement). Serialized on a debounce
+  // after any structural change, plus immediately on unload.
+  const persistLayoutRef = useRef<() => void>(() => {});
+  persistLayoutRef.current = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    WindowManager.SetLayout(JSON.stringify(api.toJSON())).catch(() => {});
   };
 
   const renameTabRef = useRef<(tabId: string, title: string) => void>(() => {});
@@ -142,7 +155,10 @@ export default function App() {
       if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
       pwdTimerRef.current = window.setTimeout(() => persistTabsRef.current(tabsRef.current), 1500);
     });
-    const onUnload = () => persistTabsRef.current(tabsRef.current);
+    const onUnload = () => {
+      persistTabsRef.current(tabsRef.current);
+      persistLayoutRef.current();
+    };
     window.addEventListener('beforeunload', onUnload);
     return () => {
       off();
@@ -151,13 +167,19 @@ export default function App() {
     };
   }, []);
 
-  // ---- Restore persisted tabs ------------------------------------------
+  // ---- Restore persisted tabs + split layout ----------------------------
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let prefs: { title: string; accent: string; pwd: string }[] = [];
+      let prefs: { id: string; title: string; accent: string; pwd: string }[] = [];
       try {
         prefs = (await WindowManager.GetTabPrefs()) ?? [];
+      } catch {
+        /* browser dev or first run */
+      }
+      let layoutJSON = '';
+      try {
+        layoutJSON = await WindowManager.GetLayout();
       } catch {
         /* browser dev or first run */
       }
@@ -165,14 +187,22 @@ export default function App() {
       const restored: Tab[] =
         prefs.length > 0
           ? prefs.map((p, i) => ({
-              id: nextTabId(),
+              id: p.id || nextTabId(),
               title: p.title || `终端${i + 1}`,
               accent: p.accent || DEFAULT_ACCENT,
               pwd: p.pwd || '',
               sessionId: null,
             }))
           : [{ id: nextTabId(), title: '终端1', accent: DEFAULT_ACCENT, pwd: '', sessionId: null }];
+      // Seed the id counter so future tabs never collide with restored ids.
+      let maxN = 0;
+      for (const t of restored) {
+        const m = /^tab-(\d+)$/.exec(t.id);
+        if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+      }
+      uid = maxN;
       tabSeqRef.current = restored.length;
+      layoutRef.current = layoutJSON || '';
       setTabs(restored);
       setLoaded(true);
     })();
@@ -185,15 +215,54 @@ export default function App() {
   useEffect(() => {
     if (!loaded || !dockReady || !apiRef.current) return;
     const api = apiRef.current;
-    for (const tab of tabs) {
-      if (!api.getPanel(tab.id)) {
-        api.addPanel({
-          id: tab.id,
-          component: 'terminal',
-          title: tab.title,
-          params: { tabId: tab.id, accent: tab.accent, pwd: tab.pwd } satisfies TerminalParams,
-          renderer: 'always',
-        });
+    const addPanel = (tab: Tab) => {
+      api.addPanel({
+        id: tab.id,
+        component: 'terminal',
+        title: tab.title,
+        params: { tabId: tab.id, accent: tab.accent, pwd: tab.pwd } satisfies TerminalParams,
+        renderer: 'always',
+      });
+    };
+
+    if (!layoutAppliedRef.current) {
+      layoutAppliedRef.current = true;
+      restoringRef.current = true;
+      try {
+        // Restore the saved split arrangement, then reconcile it against the
+        // tab roster (tabs carry the authoritative title/accent/pwd, since the
+        // layout may be stale if metadata changed without a structural move).
+        if (layoutRef.current) {
+          try {
+            api.fromJSON(JSON.parse(layoutRef.current));
+          } catch {
+            /* corrupt layout: fall through to a flat single pane */
+          }
+        }
+        const tabIds = new Set(tabs.map((t) => t.id));
+        for (const panel of [...api.panels]) {
+          if (!tabIds.has(panel.id)) panel.api.close();
+        }
+        for (const tab of tabs) {
+          const panel = api.getPanel(tab.id);
+          if (!panel) {
+            addPanel(tab);
+          } else {
+            if (panel.api.title !== tab.title) panel.api.setTitle(tab.title);
+            const p = (panel.params ?? {}) as TerminalParams;
+            if (p.accent !== tab.accent || p.pwd !== tab.pwd) {
+              panel.api.updateParameters({ tabId: tab.id, accent: tab.accent, pwd: tab.pwd });
+            }
+          }
+        }
+      } finally {
+        restoringRef.current = false;
+        persistLayoutRef.current();
+      }
+    } else {
+      // Later roster changes: just ensure each tab has a panel (e.g. new tab).
+      for (const tab of tabs) {
+        if (!api.getPanel(tab.id)) addPanel(tab);
       }
     }
   }, [loaded, dockReady, tabs]);
@@ -205,7 +274,6 @@ export default function App() {
         return (
           <Terminal
             accent={p.accent || DEFAULT_ACCENT}
-            active
             initialDir={p.pwd || ''}
             onReady={(sessionId) => readyRef.current(p.tabId, sessionId)}
           />
@@ -268,6 +336,12 @@ export default function App() {
           closeTabRef.current(panel.id);
         }
       }, 0);
+    });
+    // Persist the split arrangement (debounced) after any structural change.
+    event.api.onDidLayoutChange(() => {
+      if (restoringRef.current) return;
+      if (layoutTimerRef.current) window.clearTimeout(layoutTimerRef.current);
+      layoutTimerRef.current = window.setTimeout(() => persistLayoutRef.current(), 400);
     });
   };
 
