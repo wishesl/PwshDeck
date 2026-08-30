@@ -1,6 +1,6 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import { useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import Terminal from '../Terminal';
-import type { Direction, PaneLeaf, PaneNode } from './types';
+import type { Direction, PaneLeaf, PaneNode, Placement } from './types';
 import './Workbench.css';
 
 interface WorkbenchProps {
@@ -11,6 +11,7 @@ interface WorkbenchProps {
   onClose: (leafId: string) => void;
   onReady: (leafId: string, sessionId: string) => void;
   onRatio: (splitId: string, ratio: number) => void;
+  onMove: (sourceId: string, targetId: string, placement: Placement) => void;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -23,65 +24,146 @@ export default function Workbench({
   onClose,
   onReady,
   onRatio,
+  onMove,
 }: WorkbenchProps) {
-  if (node.kind === 'leaf') {
-    return (
-      <Pane
-        leaf={node}
-        active={node.id === activeId}
-        onActivate={onActivate}
-        onSplit={onSplit}
-        onClose={onClose}
-        onReady={onReady}
-      />
-    );
-  }
+  // Pane drag state. The ref mirrors the source id synchronously so the very
+  // first dragover (before React re-renders) still sees it.
+  const [dragSource, setDragSource] = useState<string | null>(null);
+  const dragSourceRef = useRef<string | null>(null);
+  const [dropPreview, setDropPreview] = useState<{ id: string; placement: Placement } | null>(null);
 
-  return (
-    <div className={`wb-split ${node.direction === 'row' ? 'wb-row' : 'wb-col'}`}>
-      <div className="wb-child" style={{ flexGrow: node.ratio }}>
-        <Workbench
-          node={node.a}
-          activeId={activeId}
+  const beginDrag = (id: string) => {
+    dragSourceRef.current = id;
+    setDragSource(id);
+  };
+  const endDrag = () => {
+    dragSourceRef.current = null;
+    setDragSource(null);
+    setDropPreview(null);
+  };
+
+  const render = (n: PaneNode) => {
+    if (n.kind === 'leaf') {
+      return (
+        <Pane
+          leaf={n}
+          active={n.id === activeId}
+          dragging={n.id === dragSource}
+          dropPreview={dropPreview && dropPreview.id === n.id ? dropPreview.placement : null}
           onActivate={onActivate}
           onSplit={onSplit}
           onClose={onClose}
           onReady={onReady}
-          onRatio={onRatio}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', n.id);
+            e.dataTransfer.effectAllowed = 'move';
+            beginDrag(n.id);
+          }}
+          onDragEnd={endDrag}
+          onDragOver={(e) => {
+            const src = dragSourceRef.current;
+            if (!src || src === n.id) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDropPreview({ id: n.id, placement: placementFor(e, e.currentTarget) });
+          }}
+          onDragLeave={(e) => {
+            const el = e.currentTarget as HTMLElement;
+            const related = e.relatedTarget as Node | null;
+            if (!related || !el.contains(related)) setDropPreview(null);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const src = e.dataTransfer.getData('text/plain') || dragSourceRef.current;
+            if (!src || src === n.id) return;
+            const placement = placementFor(e, e.currentTarget);
+            endDrag();
+            onMove(src, n.id, placement);
+          }}
         />
+      );
+    }
+    return (
+      <div className={`wb-split ${n.direction === 'row' ? 'wb-row' : 'wb-col'}`}>
+        <div className="wb-child" style={{ flexGrow: n.ratio }}>
+          {render(n.a)}
+        </div>
+        <Divider direction={n.direction} ratio={n.ratio} onDrag={(r) => onRatio(n.id, r)} />
+        <div className="wb-child" style={{ flexGrow: 1 - n.ratio }}>
+          {render(n.b)}
+        </div>
       </div>
-      <Divider direction={node.direction} ratio={node.ratio} onDrag={(r) => onRatio(node.id, r)} />
-      <div className="wb-child" style={{ flexGrow: 1 - node.ratio }}>
-        <Workbench
-          node={node.b}
-          activeId={activeId}
-          onActivate={onActivate}
-          onSplit={onSplit}
-          onClose={onClose}
-          onReady={onReady}
-          onRatio={onRatio}
-        />
-      </div>
-    </div>
-  );
+    );
+  };
+
+  return <>{render(node)}</>;
+}
+
+// placementFor maps a drop point to the nearest pane edge.
+function placementFor(e: DragEvent, el: HTMLElement): Placement {
+  const rect = el.getBoundingClientRect();
+  const rx = (e.clientX - rect.left) / rect.width;
+  const ry = (e.clientY - rect.top) / rect.height;
+  const dLeft = rx;
+  const dRight = 1 - rx;
+  const dTop = ry;
+  const dBottom = 1 - ry;
+  const min = Math.min(dLeft, dRight, dTop, dBottom);
+  if (min === dLeft) return 'left';
+  if (min === dRight) return 'right';
+  if (min === dTop) return 'top';
+  return 'bottom';
 }
 
 interface PaneProps {
   leaf: PaneLeaf;
   active: boolean;
+  dragging: boolean;
+  dropPreview: Placement | null;
   onActivate: (id: string) => void;
   onSplit: (leafId: string, direction: Direction) => void;
   onClose: (leafId: string) => void;
   onReady: (leafId: string, sessionId: string) => void;
+  onDragStart: (e: DragEvent<HTMLSpanElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: DragEvent<HTMLDivElement>) => void;
+  onDragLeave: (e: DragEvent<HTMLDivElement>) => void;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
 }
 
-function Pane({ leaf, active, onActivate, onSplit, onClose, onReady }: PaneProps) {
+function Pane({
+  leaf,
+  active,
+  dragging,
+  dropPreview,
+  onActivate,
+  onSplit,
+  onClose,
+  onReady,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: PaneProps) {
   return (
-    <div className={`wb-pane ${active ? 'active' : ''}`} onMouseDown={() => onActivate(leaf.id)}>
+    <div
+      className={`wb-pane ${active ? 'active' : ''} ${dragging ? 'wb-dragging' : ''}`}
+      onMouseDown={() => onActivate(leaf.id)}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className="wb-pane-head" style={{ '--tab-accent': leaf.accent } as CSSProperties}>
-        <span className="tab-dot" />
-        <span className="wb-pane-title" title={leaf.title}>
-          {leaf.title}
+        <span
+          className="wb-pane-drag"
+          draggable
+          title={`拖拽 ${leaf.title} 到其它面板`}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+        >
+          <span className="tab-dot" />
+          <span className="wb-pane-title">{leaf.title}</span>
         </span>
         <button
           type="button"
@@ -119,6 +201,7 @@ function Pane({ leaf, active, onActivate, onSplit, onClose, onReady }: PaneProps
           onReady={(sessionId) => onReady(leaf.id, sessionId)}
         />
       </div>
+      {dropPreview && <div className={`wb-drop-strip wb-drop-${dropPreview}`} />}
     </div>
   );
 }

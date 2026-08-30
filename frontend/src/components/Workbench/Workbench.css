@@ -49,6 +49,11 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  position: relative;
+}
+
+.wb-pane.wb-dragging {
+  opacity: 0.55;
 }
 
 .wb-pane-head {
@@ -66,6 +71,19 @@
 
 .wb-pane.active .wb-pane-head {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.wb-pane-drag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: grab;
+}
+
+.wb-pane-drag:active {
+  cursor: grabbing;
 }
 
 .wb-pane-title {
@@ -110,4 +128,41 @@
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* Drop indicator: a coloured strip on the edge where the dragged pane lands. */
+.wb-drop-strip {
+  position: absolute;
+  background: var(--accent);
+  z-index: 30;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(122, 162, 247, 0.7);
+}
+
+.wb-drop-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+}
+
+.wb-drop-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+}
+
+.wb-drop-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+
+.wb-drop-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
 }

@@ -9,12 +9,14 @@ import {
   countLeaves,
   flattenLeaves,
   makeSplit,
+  moveLeaf,
   newLeaf,
   removeLeaf,
   updateLeaf,
   updateSplit,
   type Direction,
   type PaneNode,
+  type Placement,
 } from './components/Workbench/types';
 import './App.css';
 
@@ -169,6 +171,14 @@ export default function App() {
     setRoot((prev) => updateSplit(prev, splitId, ratio));
   };
 
+  const handleMove = (sourceId: string, targetId: string, placement: Placement) => {
+    const next = moveLeaf(root, sourceId, targetId, placement);
+    if (next === root) return;
+    setRoot(next);
+    persistRoot(next);
+    setActiveId(sourceId);
+  };
+
   // Esc closes whichever overlay is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -240,6 +250,7 @@ export default function App() {
           onClose={handleClose}
           onReady={handleReady}
           onRatio={handleRatio}
+          onMove={handleMove}
         />
       </main>
 

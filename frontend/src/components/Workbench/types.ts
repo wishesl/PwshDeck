@@ -4,6 +4,9 @@
 
 export type Direction = 'row' | 'column';
 
+// Placement describes where a dragged leaf lands relative to its drop target.
+export type Placement = 'left' | 'right' | 'top' | 'bottom';
+
 export interface PaneLeaf {
   kind: 'leaf';
   id: string;
@@ -86,6 +89,41 @@ export function flattenLeaves(root: PaneNode): PaneLeaf[] {
 export function countLeaves(root: PaneNode): number {
   if (root.kind === 'leaf') return 1;
   return countLeaves(root.a) + countLeaves(root.b);
+}
+
+// moveLeaf detaches the source leaf and re-attaches it next to the target
+// leaf, splitting the target in the given placement. Returns the new tree
+// (unchanged if either id is missing or they are the same).
+export function moveLeaf(
+  root: PaneNode,
+  sourceId: string,
+  targetId: string,
+  placement: Placement,
+): PaneNode {
+  if (sourceId === targetId) return root;
+  const [pruned, removed] = removeLeaf(root, sourceId);
+  if (!removed) return root;
+  return insertLeaf(pruned, targetId, removed, placement);
+}
+
+function insertLeaf(root: PaneNode, targetId: string, leaf: PaneLeaf, placement: Placement): PaneNode {
+  if (root.kind === 'leaf') {
+    if (root.id !== targetId) return root;
+    switch (placement) {
+      case 'left':
+        return makeSplit('row', leaf, root);
+      case 'right':
+        return makeSplit('row', root, leaf);
+      case 'top':
+        return makeSplit('column', leaf, root);
+      case 'bottom':
+        return makeSplit('column', root, leaf);
+    }
+  }
+  const a = insertLeaf(root.a, targetId, leaf, placement);
+  const b = insertLeaf(root.b, targetId, leaf, placement);
+  if (a === root.a && b === root.b) return root;
+  return { ...root, a, b };
 }
 
 // buildColumn folds a list of leaves into a balanced column (stacked) split.
