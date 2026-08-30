@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Events, Window } from '@wailsio/runtime';
+import {
+  DockviewReact,
+  type DockviewApi,
+  type DockviewReadyEvent,
+  type IDockviewPanelProps,
+} from 'dockview-react';
+import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import McpPanel from './components/McpPanel';
-import TabMenu from './components/TabMenu';
-import { DEFAULT_ACCENT } from './components/Terminal';
-import Workbench, { type PaneState, type TabView } from './components/Workbench/Workbench';
-import { insertPane, leaf, removeLeaf, updateSplit, type LayoutNode, type Placement } from './components/Workbench/types';
+import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import './App.css';
 
 type Tab = {
@@ -16,28 +20,43 @@ type Tab = {
   sessionId: string | null;
 };
 
-type MenuState = { tabId: string; x: number; y: number };
+type TerminalParams = { tabId: string; accent: string; pwd: string };
 
 let uid = 0;
 const nextTabId = () => `tab-${++uid}`;
-let paneSeq = 0;
-const nextPaneId = () => `pane-${++paneSeq}`;
 
 export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
-  const [panes, setPanes] = useState<PaneState[]>([]);
-  const [layout, setLayout] = useState<LayoutNode>(leaf(''));
-  const [activePaneId, setActivePaneId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [dockReady, setDockReady] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
 
-  const tabSeqRef = useRef(1);
+  const apiRef = useRef<DockviewApi | null>(null);
   const tabsRef = useRef<Tab[]>(tabs);
+  const tabSeqRef = useRef(1);
   const pwdTimerRef = useRef<number | null>(null);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  // Latest-value refs so the (once-invoked) dockview callbacks never go stale.
+  const readyRef = useRef<(tabId: string, sessionId: string) => void>(() => {});
+  readyRef.current = (tabId, sessionId) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
+  };
+  const closeTabRef = useRef<(tabId: string) => void>(() => {});
+  closeTabRef.current = (tabId) => {
+    const next = tabsRef.current.filter((t) => t.id !== tabId);
+    if (next.length === tabsRef.current.length) return;
+    setTabs(next);
+    persistTabsRef.current(next);
+  };
+  const persistTabsRef = useRef<(list: Tab[]) => void>(() => {});
+  persistTabsRef.current = (list) => {
+    WindowManager.SetTabPrefs(
+      list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
+    ).catch(() => {});
+  };
 
   // ---- Close-to-tray vs exit prompt -------------------------------------
   const [closePromptOpen, setClosePromptOpen] = useState(false);
@@ -81,13 +100,7 @@ export default function App() {
     return off;
   }, []);
 
-  // ---- Persistence ------------------------------------------------------
-  const persistTabs = (list: Tab[]) => {
-    WindowManager.SetTabPrefs(
-      list.map((t) => ({ title: t.title, accent: t.accent, pwd: t.pwd })),
-    ).catch(() => {});
-  };
-
+  // ---- pwd tracking -----------------------------------------------------
   useEffect(() => {
     const off = Events.On('term_pwd', (event: any) => {
       const payload = event?.data;
@@ -98,9 +111,9 @@ export default function App() {
         prev.map((t) => (t.sessionId === payload.id && t.pwd !== payload.data ? { ...t, pwd: payload.data } : t)),
       );
       if (pwdTimerRef.current) window.clearTimeout(pwdTimerRef.current);
-      pwdTimerRef.current = window.setTimeout(() => persistTabs(tabsRef.current), 1500);
+      pwdTimerRef.current = window.setTimeout(() => persistTabsRef.current(tabsRef.current), 1500);
     });
-    const onUnload = () => persistTabs(tabsRef.current);
+    const onUnload = () => persistTabsRef.current(tabsRef.current);
     window.addEventListener('beforeunload', onUnload);
     return () => {
       off();
@@ -109,7 +122,7 @@ export default function App() {
     };
   }, []);
 
-  // Restore persisted tabs into a single pane.
+  // ---- Restore persisted tabs ------------------------------------------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -131,15 +144,7 @@ export default function App() {
             }))
           : [{ id: nextTabId(), title: '终端1', accent: DEFAULT_ACCENT, pwd: '', sessionId: null }];
       tabSeqRef.current = restored.length;
-      const pane: PaneState = {
-        id: nextPaneId(),
-        tabIds: restored.map((t) => t.id),
-        activeTabId: restored[0].id,
-      };
       setTabs(restored);
-      setPanes([pane]);
-      setLayout(leaf(pane.id));
-      setActivePaneId(pane.id);
       setLoaded(true);
     })();
     return () => {
@@ -147,10 +152,56 @@ export default function App() {
     };
   }, []);
 
-  // ---- Tab / pane operations --------------------------------------------
-  const findPane = (tabId: string) => panes.find((p) => p.tabIds.includes(tabId));
+  // ---- Add dockview panels for tabs ------------------------------------
+  useEffect(() => {
+    if (!loaded || !dockReady || !apiRef.current) return;
+    const api = apiRef.current;
+    for (const tab of tabs) {
+      if (!api.getPanel(tab.id)) {
+        api.addPanel({
+          id: tab.id,
+          component: 'terminal',
+          title: tab.title,
+          params: { tabId: tab.id, accent: tab.accent, pwd: tab.pwd } satisfies TerminalParams,
+          renderer: 'always',
+        });
+      }
+    }
+  }, [loaded, dockReady, tabs]);
 
-  const addTab = (paneId: string) => {
+  const components = useMemo(
+    () => ({
+      terminal: (props: IDockviewPanelProps) => {
+        const p = (props.params ?? {}) as TerminalParams;
+        return (
+          <Terminal
+            accent={p.accent || DEFAULT_ACCENT}
+            active
+            initialDir={p.pwd || ''}
+            onReady={(sessionId) => readyRef.current(p.tabId, sessionId)}
+          />
+        );
+      },
+    }),
+    [],
+  );
+
+  const onReady = (event: DockviewReadyEvent) => {
+    apiRef.current = event.api;
+    setDockReady(true);
+    // A panel "remove" also fires during a move (remove then re-add), so defer
+    // and check whether the panel really is gone before treating it as closed.
+    event.api.onDidRemovePanel((panel) => {
+      window.setTimeout(() => {
+        const api = apiRef.current;
+        if (api && !api.getPanel(panel.id)) {
+          closeTabRef.current(panel.id);
+        }
+      }, 0);
+    });
+  };
+
+  const addTab = () => {
     tabSeqRef.current += 1;
     const tab: Tab = {
       id: nextTabId(),
@@ -159,111 +210,15 @@ export default function App() {
       pwd: '',
       sessionId: null,
     };
-    const nextTabs = [...tabs, tab];
-    setTabs(nextTabs);
-    setPanes((prev) =>
-      prev.map((p) => (p.id === paneId ? { ...p, tabIds: [...p.tabIds, tab.id], activeTabId: tab.id } : p)),
-    );
-    setActivePaneId(paneId);
-    persistTabs(nextTabs);
-  };
-
-  const closeTab = (tabId: string) => {
-    if (tabs.length <= 1) return;
-    const pane = findPane(tabId);
-    if (!pane) return;
-    const nextTabs = tabs.filter((t) => t.id !== tabId);
-    setTabs(nextTabs);
-    persistTabs(nextTabs);
-
-    const remaining = pane.tabIds.filter((id) => id !== tabId);
-    if (remaining.length === 0) {
-      setPanes((prev) => prev.filter((p) => p.id !== pane.id));
-      setLayout((prev) => removeLeaf(prev, pane.id));
-      if (activePaneId === pane.id) {
-        const other = panes.find((p) => p.id !== pane.id);
-        if (other) setActivePaneId(other.id);
-      }
-    } else {
-      setPanes((prev) =>
-        prev.map((p) =>
-          p.id === pane.id
-            ? { ...p, tabIds: remaining, activeTabId: p.activeTabId === tabId ? remaining[0] : p.activeTabId }
-            : p,
-        ),
-      );
-    }
-  };
-
-  const selectTab = (paneId: string, tabId: string) => {
-    setActivePaneId(paneId);
-    setPanes((prev) => prev.map((p) => (p.id === paneId ? { ...p, activeTabId: tabId } : p)));
-  };
-
-  const renameTab = (id: string, title: string) => {
-    const next = tabs.map((t) => (t.id === id ? { ...t, title } : t));
+    const next = [...tabsRef.current, tab];
     setTabs(next);
-    persistTabs(next);
-  };
-
-  const setTabAccent = (id: string, accent: string) => {
-    const next = tabs.map((t) => (t.id === id ? { ...t, accent } : t));
-    setTabs(next);
-    persistTabs(next);
-  };
-
-  const handleReady = (tabId: string, sessionId: string) => {
-    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
-  };
-
-  const handleRatio = (splitId: string, ratio: number) => {
-    setLayout((prev) => updateSplit(prev, splitId, ratio));
-  };
-
-  const handleSplitTab = (sourceTabId: string, targetPaneId: string, placement: Placement) => {
-    const sourcePane = findPane(sourceTabId);
-    if (!sourcePane) return;
-    if (sourcePane.id === targetPaneId && sourcePane.tabIds.length === 1) return;
-    const newPaneId = nextPaneId();
-    const newPane: PaneState = { id: newPaneId, tabIds: [sourceTabId], activeTabId: sourceTabId };
-    const remaining = sourcePane.tabIds.filter((id) => id !== sourceTabId);
-
-    let nextPanes = panes.map((p) => (p.id === sourcePane.id ? { ...p, tabIds: remaining } : p));
-    let nextLayout = insertPane(layout, targetPaneId, newPaneId, placement);
-    if (remaining.length === 0) {
-      nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
-      nextLayout = removeLeaf(nextLayout, sourcePane.id);
-    }
-    nextPanes = [...nextPanes, newPane];
-    setPanes(nextPanes);
-    setLayout(nextLayout);
-    setActivePaneId(newPaneId);
-  };
-
-  const handleMoveTab = (sourceTabId: string, targetPaneId: string) => {
-    const sourcePane = findPane(sourceTabId);
-    if (!sourcePane || sourcePane.id === targetPaneId) return;
-    const remaining = sourcePane.tabIds.filter((id) => id !== sourceTabId);
-    let nextPanes = panes.map((p) => {
-      if (p.id === sourcePane.id) return { ...p, tabIds: remaining };
-      if (p.id === targetPaneId) return { ...p, tabIds: [...p.tabIds, sourceTabId], activeTabId: sourceTabId };
-      return p;
-    });
-    let nextLayout = layout;
-    if (remaining.length === 0) {
-      nextPanes = nextPanes.filter((p) => p.id !== sourcePane.id);
-      nextLayout = removeLeaf(layout, sourcePane.id);
-    }
-    setPanes(nextPanes);
-    setLayout(nextLayout);
-    setActivePaneId(targetPaneId);
+    persistTabsRef.current(next);
   };
 
   // Esc closes whichever overlay is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setMenu(null);
         setMcpOpen(false);
         setClosePromptOpen(false);
       }
@@ -272,19 +227,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (!loaded) {
-    return <div className="app" />;
-  }
-
-  const menuTab = menu ? tabs.find((t) => t.id === menu.tabId) : null;
-  const tabViews: TabView[] = tabs.map((t) => ({
-    id: t.id,
-    title: t.title,
-    accent: t.accent,
-    pwd: t.pwd,
-    sessionId: t.sessionId,
-  }));
-
   return (
     <div className="app">
       <div className="topbar">
@@ -292,6 +234,9 @@ export default function App() {
           Pwsh<span className="brand-accent">Deck</span>
         </div>
         <div style={{ flex: 1 }} />
+        <button type="button" className="new-session-btn" title="新建会话" onClick={addTab}>
+          ＋ 新建会话
+        </button>
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>
@@ -330,39 +275,10 @@ export default function App() {
       </div>
 
       <main className="content">
-        <Workbench
-          layout={layout}
-          panes={panes}
-          tabs={tabViews}
-          activePaneId={activePaneId}
-          onSelectTab={selectTab}
-          onAddTab={addTab}
-          onCloseTab={closeTab}
-          onReady={handleReady}
-          onRatio={handleRatio}
-          onSplitTab={handleSplitTab}
-          onMoveTab={handleMoveTab}
-          onTabContextMenu={(tabId, x, y) => setMenu({ tabId, x, y })}
-        />
+        <div style={{ width: '100%', height: '100%' }}>
+          <DockviewReact className="dockview-theme-abyss" onReady={onReady} components={components} />
+        </div>
       </main>
-
-      {menu && menuTab && (
-        <TabMenu
-          x={menu.x}
-          y={menu.y}
-          title={menuTab.title}
-          accent={menuTab.accent}
-          onRename={(name) => {
-            renameTab(menu.tabId, name);
-            setMenu(null);
-          }}
-          onAccent={(color) => {
-            setTabAccent(menu.tabId, color);
-            setMenu(null);
-          }}
-          onClose={() => setMenu(null)}
-        />
-      )}
 
       {closePromptOpen && (
         <div className="modal-overlay" onClick={() => setClosePromptOpen(false)}>
