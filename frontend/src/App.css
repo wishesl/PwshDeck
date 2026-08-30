@@ -610,6 +610,12 @@
 
 /* ---- dockview tab restyle (match the original design) ------------------ */
 
+/* Only the tab itself is draggable; disable the group-drag source (the empty
+   area of the tab bar), which made "anywhere on the header" start a drag. */
+.dv-tabs-and-actions-container .dv-void-container {
+  pointer-events: none;
+}
+
 .dv-tab {
   position: relative;
 }
@@ -623,7 +629,7 @@
   box-sizing: border-box;
   border-radius: 6px;
   border: 1px solid transparent;
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   font-size: 12.5px;
   color: var(--text-muted);
@@ -633,6 +639,10 @@
     background 0.12s ease,
     color 0.12s ease,
     border-color 0.12s ease;
+}
+
+.dv-tab .pd-tab:active {
+  cursor: grabbing;
 }
 
 .dv-tab .pd-tab:hover {
