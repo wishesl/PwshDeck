@@ -153,6 +153,13 @@ export default function App() {
     persistRoot(next);
   };
 
+  // New session: split the active pane (or the first pane) to the right.
+  const handleNewSession = () => {
+    const leaves = flattenLeaves(root);
+    const target = leaves.find((l) => l.id === activeId) ?? leaves[0];
+    handleSplit(target.id, 'row');
+  };
+
   const handleClose = (leafId: string) => {
     if (countLeaves(root) <= 1) return; // keep at least one pane
     const [next] = removeLeaf(root, leafId);
@@ -177,6 +184,19 @@ export default function App() {
     setRoot(next);
     persistRoot(next);
     setActiveId(sourceId);
+  };
+
+  // Merge: dropping a pane in the centre of another removes it (closes its
+  // session) and collapses the split — "dragging back" undoes the split.
+  const handleMerge = (sourceId: string) => {
+    if (countLeaves(root) <= 1) return;
+    const [next, removed] = removeLeaf(root, sourceId);
+    if (!removed) return;
+    setRoot(next);
+    persistRoot(next);
+    if (activeId === sourceId) {
+      setActiveId(flattenLeaves(next)[0].id);
+    }
   };
 
   // Esc closes whichever overlay is open.
@@ -204,6 +224,9 @@ export default function App() {
           Pwsh<span className="brand-accent">Deck</span>
         </div>
         <div style={{ flex: 1 }} />
+        <button type="button" className="new-session-btn" title="新建会话" onClick={handleNewSession}>
+          ＋ 新建会话
+        </button>
         <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
           MCP 管理
         </button>
@@ -246,11 +269,11 @@ export default function App() {
           node={root}
           activeId={activeId}
           onActivate={setActiveId}
-          onSplit={handleSplit}
           onClose={handleClose}
           onReady={handleReady}
           onRatio={handleRatio}
           onMove={handleMove}
+          onMerge={handleMerge}
         />
       </main>
 

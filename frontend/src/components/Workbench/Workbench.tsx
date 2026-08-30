@@ -7,30 +7,36 @@ interface WorkbenchProps {
   node: PaneNode;
   activeId: string | null;
   onActivate: (id: string) => void;
-  onSplit: (leafId: string, direction: Direction) => void;
   onClose: (leafId: string) => void;
   onReady: (leafId: string, sessionId: string) => void;
   onRatio: (splitId: string, ratio: number) => void;
   onMove: (sourceId: string, targetId: string, placement: Placement) => void;
+  onMerge: (sourceId: string) => void;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+// Drop preview: either a split on an edge, or a merge in the centre.
+type DropPreview =
+  | { id: string; placement: Placement }
+  | { id: string; merge: true }
+  | null;
 
 export default function Workbench({
   node,
   activeId,
   onActivate,
-  onSplit,
   onClose,
   onReady,
   onRatio,
   onMove,
+  onMerge,
 }: WorkbenchProps) {
-  // Pane drag state. The ref mirrors the source id synchronously so the very
-  // first dragover (before React re-renders) still sees it.
+  // The ref mirrors the source id synchronously so the first dragover (before
+  // React re-renders) still sees it.
   const [dragSource, setDragSource] = useState<string | null>(null);
   const dragSourceRef = useRef<string | null>(null);
-  const [dropPreview, setDropPreview] = useState<{ id: string; placement: Placement } | null>(null);
+  const [dropPreview, setDropPreview] = useState<DropPreview>(null);
 
   const beginDrag = (id: string) => {
     dragSourceRef.current = id;
@@ -44,14 +50,15 @@ export default function Workbench({
 
   const render = (n: PaneNode) => {
     if (n.kind === 'leaf') {
+      const drop = dropPreview && dropPreview.id === n.id ? dropPreview : null;
       return (
         <Pane
           leaf={n}
           active={n.id === activeId}
           dragging={n.id === dragSource}
-          dropPreview={dropPreview && dropPreview.id === n.id ? dropPreview.placement : null}
+          edgeDrop={drop && 'placement' in drop ? drop.placement : null}
+          mergeDrop={drop ? 'merge' in drop : false}
           onActivate={onActivate}
-          onSplit={onSplit}
           onClose={onClose}
           onReady={onReady}
           onDragStart={(e) => {
@@ -65,7 +72,7 @@ export default function Workbench({
             if (!src || src === n.id) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            setDropPreview({ id: n.id, placement: placementFor(e, e.currentTarget) });
+            setDropPreview(dropKind(e, e.currentTarget, n.id));
           }}
           onDragLeave={(e) => {
             const el = e.currentTarget as HTMLElement;
@@ -76,20 +83,21 @@ export default function Workbench({
             e.preventDefault();
             const src = e.dataTransfer.getData('text/plain') || dragSourceRef.current;
             if (!src || src === n.id) return;
-            const placement = placementFor(e, e.currentTarget);
+            const kind = dropKind(e, e.currentTarget, n.id);
             endDrag();
-            onMove(src, n.id, placement);
+            if ('merge' in kind) onMerge(src);
+            else onMove(src, n.id, kind.placement);
           }}
         />
       );
     }
     return (
       <div className={`wb-split ${n.direction === 'row' ? 'wb-row' : 'wb-col'}`}>
-        <div className="wb-child" style={{ flexGrow: n.ratio }}>
+        <div className="wb-child" style={{ flex: `${n.ratio} 1 0%` }}>
           {render(n.a)}
         </div>
         <Divider direction={n.direction} ratio={n.ratio} onDrag={(r) => onRatio(n.id, r)} />
-        <div className="wb-child" style={{ flexGrow: 1 - n.ratio }}>
+        <div className="wb-child" style={{ flex: `${1 - n.ratio} 1 0%` }}>
           {render(n.b)}
         </div>
       </div>
@@ -99,8 +107,9 @@ export default function Workbench({
   return <>{render(node)}</>;
 }
 
-// placementFor maps a drop point to the nearest pane edge.
-function placementFor(e: DragEvent, el: HTMLElement): Placement {
+// dropKind maps a drop point to either a split edge (near the border) or a
+// merge (in the centre of the pane).
+function dropKind(e: DragEvent, el: HTMLElement, id: string): Exclude<DropPreview, null> {
   const rect = el.getBoundingClientRect();
   const rx = (e.clientX - rect.left) / rect.width;
   const ry = (e.clientY - rect.top) / rect.height;
@@ -109,19 +118,20 @@ function placementFor(e: DragEvent, el: HTMLElement): Placement {
   const dTop = ry;
   const dBottom = 1 - ry;
   const min = Math.min(dLeft, dRight, dTop, dBottom);
-  if (min === dLeft) return 'left';
-  if (min === dRight) return 'right';
-  if (min === dTop) return 'top';
-  return 'bottom';
+  if (min > 0.28) return { id, merge: true };
+  if (min === dLeft) return { id, placement: 'left' };
+  if (min === dRight) return { id, placement: 'right' };
+  if (min === dTop) return { id, placement: 'top' };
+  return { id, placement: 'bottom' };
 }
 
 interface PaneProps {
   leaf: PaneLeaf;
   active: boolean;
   dragging: boolean;
-  dropPreview: Placement | null;
+  edgeDrop: Placement | null;
+  mergeDrop: boolean;
   onActivate: (id: string) => void;
-  onSplit: (leafId: string, direction: Direction) => void;
   onClose: (leafId: string) => void;
   onReady: (leafId: string, sessionId: string) => void;
   onDragStart: (e: DragEvent<HTMLSpanElement>) => void;
@@ -135,9 +145,9 @@ function Pane({
   leaf,
   active,
   dragging,
-  dropPreview,
+  edgeDrop,
+  mergeDrop,
   onActivate,
-  onSplit,
   onClose,
   onReady,
   onDragStart,
@@ -148,7 +158,7 @@ function Pane({
 }: PaneProps) {
   return (
     <div
-      className={`wb-pane ${active ? 'active' : ''} ${dragging ? 'wb-dragging' : ''}`}
+      className={`wb-pane ${active ? 'active' : ''} ${dragging ? 'wb-dragging' : ''} ${mergeDrop ? 'wb-merge' : ''}`}
       onMouseDown={() => onActivate(leaf.id)}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -158,31 +168,13 @@ function Pane({
         <span
           className="wb-pane-drag"
           draggable
-          title={`拖拽 ${leaf.title} 到其它面板`}
+          title={`拖拽 ${leaf.title} 到其它面板边缘分屏 / 中心合并`}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
         >
           <span className="tab-dot" />
           <span className="wb-pane-title">{leaf.title}</span>
         </span>
-        <button
-          type="button"
-          className="wb-btn"
-          title="左右分屏"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => onSplit(leaf.id, 'row')}
-        >
-          ◧
-        </button>
-        <button
-          type="button"
-          className="wb-btn"
-          title="上下分屏"
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => onSplit(leaf.id, 'column')}
-        >
-          ⬒
-        </button>
         <button
           type="button"
           className="wb-btn wb-close"
@@ -201,7 +193,7 @@ function Pane({
           onReady={(sessionId) => onReady(leaf.id, sessionId)}
         />
       </div>
-      {dropPreview && <div className={`wb-drop-strip wb-drop-${dropPreview}`} />}
+      {edgeDrop && <div className={`wb-drop-strip wb-drop-${edgeDrop}`} />}
     </div>
   );
 }
