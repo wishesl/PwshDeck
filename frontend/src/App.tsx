@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Events, Window } from '@wailsio/runtime';
 import {
-  DockviewDefaultTab,
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
@@ -211,15 +210,34 @@ export default function App() {
   );
 
   const defaultTabComponent = useMemo(
-    () => (props: IDockviewDefaultTabProps) => (
-      <DockviewDefaultTab
-        {...props}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setTabMenu({ tabId: props.api.id, x: e.clientX, y: e.clientY });
-        }}
-      />
-    ),
+    () => (props: IDockviewDefaultTabProps) => {
+      const accent = (props.params as { accent?: string } | undefined)?.accent ?? DEFAULT_ACCENT;
+      return (
+        <div
+          className="pd-tab"
+          style={{ '--tab-accent': accent } as CSSProperties}
+          title={props.api.title ?? ''}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setTabMenu({ tabId: props.api.id, x: e.clientX, y: e.clientY });
+          }}
+        >
+          <span className="pd-tab-dot" />
+          <span className="pd-tab-title">{props.api.title}</span>
+          <button
+            type="button"
+            className="pd-tab-close"
+            title="关闭"
+            onClick={(e) => {
+              e.stopPropagation();
+              props.api.close();
+            }}
+          >
+            ×
+          </button>
+        </div>
+      );
+    },
     [],
   );
 
