@@ -183,15 +183,10 @@
   width: 100%;
 }
 
-/* Centre-drop target: moving the dragged tab into this pane. */
-.wb-pane.wb-merge::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid var(--accent);
-  background: rgba(122, 162, 247, 0.1);
-  z-index: 29;
-  pointer-events: none;
+/* Merge drop target: dropping a tab onto this pane's tab bar. */
+.wb-pane-tabs.wb-tabs-merge {
+  background: rgba(122, 162, 247, 0.22);
+  border-bottom-color: var(--accent);
 }
 
 /* Drop indicators -------------------------------------------------------- */

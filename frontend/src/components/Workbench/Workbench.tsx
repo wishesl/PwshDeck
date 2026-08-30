@@ -32,7 +32,8 @@ interface WorkbenchProps {
   onTabContextMenu: (tabId: string, x: number, y: number) => void;
 }
 
-type DropPreview = { paneId: string; placement: Placement } | { paneId: string; center: true } | null;
+// Drop preview: split on a pane edge, or merge into a pane's tab bar.
+type DropPreview = { paneId: string; placement: Placement } | { paneId: string; merge: true } | null;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -76,7 +77,7 @@ export default function Workbench({
           active={pane.id === activePaneId}
           draggingTabId={dragTabId}
           edgeDrop={preview && 'placement' in preview ? preview.placement : null}
-          centerDrop={preview ? 'center' in preview : false}
+          mergeDrop={preview ? 'merge' in preview : false}
           onSelectTab={onSelectTab}
           onAddTab={onAddTab}
           onCloseTab={onCloseTab}
@@ -93,11 +94,7 @@ export default function Workbench({
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = 'move';
-            if (nearEdge(e, e.currentTarget)) {
-              setDropPreview({ paneId: pane.id, placement: placementFor(e, e.currentTarget) });
-            } else {
-              setDropPreview({ paneId: pane.id, center: true });
-            }
+            setDropPreview({ paneId: pane.id, placement: placementFor(e, e.currentTarget) });
           }}
           onPaneDrop={(e) => {
             e.preventDefault();
@@ -105,11 +102,23 @@ export default function Workbench({
             const src = readTabId(e);
             endDrag();
             if (!src) return;
-            if (nearEdge(e, e.currentTarget)) {
-              onSplitTab(src, pane.id, placementFor(e, e.currentTarget));
-            } else {
-              onMoveTab(src, pane.id);
-            }
+            onSplitTab(src, pane.id, placementFor(e, e.currentTarget));
+          }}
+          onTabBarDragOver={(e) => {
+            const src = dragRef.current;
+            if (!src) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            setDropPreview({ paneId: pane.id, merge: true });
+          }}
+          onTabBarDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const src = readTabId(e);
+            endDrag();
+            if (!src) return;
+            onMoveTab(src, pane.id);
           }}
           onTabContextMenu={onTabContextMenu}
         />
@@ -158,20 +167,13 @@ function placementFor(e: DragEvent, el: HTMLElement): Placement {
   return 'bottom';
 }
 
-function nearEdge(e: DragEvent, el: HTMLElement): boolean {
-  const rect = el.getBoundingClientRect();
-  const rx = (e.clientX - rect.left) / rect.width;
-  const ry = (e.clientY - rect.top) / rect.height;
-  return Math.min(rx, 1 - rx, ry, 1 - ry) <= 0.28;
-}
-
 interface PaneViewProps {
   pane: PaneState;
   tabs: TabView[];
   active: boolean;
   draggingTabId: string | null;
   edgeDrop: Placement | null;
-  centerDrop: boolean;
+  mergeDrop: boolean;
   onSelectTab: (paneId: string, tabId: string) => void;
   onAddTab: (paneId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -180,6 +182,8 @@ interface PaneViewProps {
   onTabDragEnd: () => void;
   onPaneDragOver: (e: DragEvent<HTMLDivElement>) => void;
   onPaneDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onTabBarDragOver: (e: DragEvent<HTMLDivElement>) => void;
+  onTabBarDrop: (e: DragEvent<HTMLDivElement>) => void;
   onTabContextMenu: (tabId: string, x: number, y: number) => void;
 }
 
@@ -189,7 +193,7 @@ function PaneView({
   active,
   draggingTabId,
   edgeDrop,
-  centerDrop,
+  mergeDrop,
   onSelectTab,
   onAddTab,
   onCloseTab,
@@ -198,6 +202,8 @@ function PaneView({
   onTabDragEnd,
   onPaneDragOver,
   onPaneDrop,
+  onTabBarDragOver,
+  onTabBarDrop,
   onTabContextMenu,
 }: PaneViewProps) {
   const paneTabs = pane.tabIds
@@ -206,12 +212,17 @@ function PaneView({
 
   return (
     <div
-      className={`wb-pane ${active ? 'active' : ''} ${centerDrop ? 'wb-merge' : ''}`}
+      className={`wb-pane ${active ? 'active' : ''}`}
       onMouseDown={() => onSelectTab(pane.id, pane.activeTabId)}
       onDragOver={onPaneDragOver}
       onDrop={onPaneDrop}
     >
-      <div className="wb-pane-tabs">
+      <div
+        className={`wb-pane-tabs ${mergeDrop ? 'wb-tabs-merge' : ''}`}
+        onDragOver={onTabBarDragOver}
+        onDrop={onTabBarDrop}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {paneTabs.map((tab) => {
           const isActive = tab.id === pane.activeTabId;
           return (
