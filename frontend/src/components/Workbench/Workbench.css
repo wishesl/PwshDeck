@@ -1,0 +1,113 @@
+/* Workbench split-pane layout. A window is a binary tree of terminal panes
+   separated by draggable dividers. Design tokens come from App.css `:root`. */
+
+.wb-split {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-row {
+  flex-direction: row;
+}
+
+.wb-col {
+  flex-direction: column;
+}
+
+.wb-child {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.wb-divider {
+  flex: 0 0 5px;
+  background: var(--border);
+  transition: background 0.12s ease;
+}
+
+.wb-divider:hover {
+  background: var(--accent);
+}
+
+.wb-divider-row {
+  cursor: col-resize;
+}
+
+.wb-divider-col {
+  cursor: row-resize;
+}
+
+.wb-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+  flex: none;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  --wails-draggable: no-drag;
+}
+
+.wb-pane.active .wb-pane-head {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wb-pane-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.wb-pane.active .wb-pane-title {
+  color: var(--text-strong);
+}
+
+.wb-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.wb-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.wb-btn.wb-close:hover {
+  background: rgba(247, 118, 142, 0.14);
+  color: var(--danger);
+}
+
+.wb-pane-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}

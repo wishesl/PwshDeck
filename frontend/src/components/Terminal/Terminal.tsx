@@ -102,6 +102,10 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
     };
     syncSize();
     window.addEventListener('resize', syncSize);
+    // Re-fit when the pane resizes (e.g. dragging a split divider), not just
+    // when the whole window resizes.
+    const resizeObserver = new ResizeObserver(syncSize);
+    resizeObserver.observe(container);
 
     // Show a small copy/paste menu when the user finishes selecting text or
     // right-clicks. Capture phase so xterm's own event handling (which may
@@ -194,6 +198,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, active = true, initi
       offData();
       offStatus();
       window.removeEventListener('resize', syncSize);
+      resizeObserver.disconnect();
       container.removeEventListener('mouseup', onMouseUp, true);
       container.removeEventListener('contextmenu', onContextMenu, true);
       document.removeEventListener('mousedown', onDocMouseDown, true);
