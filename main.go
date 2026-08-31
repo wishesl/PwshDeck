@@ -27,6 +27,10 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
+// applicationName is kept as a build-time variable so temporary test builds
+// can use a distinct Wails/WebView identity without changing the normal build.
+var applicationName = "PwshDeck"
+
 // main supports two modes:
 //   - default: the GUI terminal app; optionally serves MCP over HTTP on
 //     127.0.0.1 so local AI clients can manage pwsh sessions.
@@ -74,7 +78,7 @@ func runGUI() {
 	// 'Assets' configures the asset server with the 'FS' variable pointing to
 	// the frontend files. 'Services' are exposed to the frontend bindings.
 	app := application.New(application.Options{
-		Name:        "PwshDeck",
+		Name:        applicationName,
 		Description: "Interactive pwsh terminal with MCP remote control",
 		Services: []application.Service{
 			application.NewService(pwshSvc),

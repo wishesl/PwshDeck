@@ -75,6 +75,9 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
       theme: themeFor(accentRef.current),
       scrollback: 10000,
+      // ConPTY reprints wrapped lines differently from a generic VT host.
+      // The build number is completed after StartSession returns.
+      windowsPty: { backend: 'conpty' },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -84,6 +87,87 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     termRef.current = term;
     fitRef.current = fit;
 
+    // Wails calls are asynchronous. Keep one write in flight and merge pending
+    // raw input, preserving byte order without creating one RPC per key-repeat
+    // event.
+    let disposed = false;
+    let inputInFlight = false;
+    let pendingInput: { id: string; data: string } | null = null;
+    const drainInput = () => {
+      if (inputInFlight || disposed || !pendingInput) return;
+      const request = pendingInput;
+      pendingInput = null;
+      inputInFlight = true;
+      Promise.resolve()
+        .then(() => {
+          if (disposed) return;
+          return SessionManager.WriteInput(request.id, request.data);
+        })
+        .catch(() => {})
+        .then(() => {
+          inputInFlight = false;
+          drainInput();
+        });
+    };
+    const enqueueInput = (id: string, data: string) => {
+      if (disposed) return;
+      if (pendingInput && pendingInput.id === id) {
+        pendingInput.data += data;
+      } else {
+        pendingInput = { id, data };
+      }
+      drainInput();
+    };
+
+    // Event delivery should be ordered too: PSReadLine redraws the prompt with
+    // cursor-control sequences, so applying a later chunk before an earlier one
+    // leaves xterm.js showing a cursor different from the shell's real state.
+    let outputTail = Promise.resolve();
+    const enqueueOutput = (data: string) => {
+      outputTail = outputTail
+        .catch(() => {})
+        .then(
+          () =>
+            new Promise<void>((resolve) => {
+              if (disposed) {
+                resolve();
+                return;
+              }
+              term.write(data, resolve);
+            }),
+        )
+        .catch(() => {});
+    };
+
+    // Resize requests can also arrive out of order during a window or pane
+    // resize. Send one at a time and retain only the newest pending dimensions.
+    let resizeInFlight = false;
+    let pendingResize: { cols: number; rows: number } | null = null;
+    const drainResize = () => {
+      if (resizeInFlight || disposed || !sessionIdRef.current) return;
+      resizeInFlight = true;
+      void (async () => {
+        try {
+          while (!disposed && sessionIdRef.current && pendingResize) {
+            const dims = pendingResize;
+            pendingResize = null;
+            try {
+              await SessionManager.Resize(sessionIdRef.current, dims.cols, dims.rows);
+            } catch (err) {
+              console.warn('同步终端尺寸失败', err);
+            }
+          }
+        } finally {
+          resizeInFlight = false;
+          if (!disposed && pendingResize && sessionIdRef.current) drainResize();
+        }
+      })();
+    };
+    const enqueueResize = (cols: number, rows: number) => {
+      pendingResize = { cols, rows };
+      drainResize();
+    };
+
     // Keep the ConPTY size in sync with the rendered terminal.
     const syncSize = () => {
       if (!isVisible()) return;
@@ -91,9 +175,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
         fit.fit();
         const dims = fit.proposeDimensions();
         const id = sessionIdRef.current;
-        if (dims && id) {
-          SessionManager.Resize(id, dims.cols, dims.rows).catch(() => {});
-        }
+        if (dims && id) enqueueResize(dims.cols, dims.rows);
       } catch {
         /* terminal not ready yet */
       }
@@ -138,7 +220,6 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     });
 
     // Boot the shell bound to this window so closing the window stops it.
-    let disposed = false;
     (async () => {
       let winName = '';
       try {
@@ -155,6 +236,11 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
         SessionManager.StopSession(info.id).catch(() => {});
         return;
       }
+      // xterm.js needs the actual Windows build to classify ConPTY wrapping:
+      // builds before 21376 use the legacy wrapped-line heuristics.
+      if (info.windows_build > 0) {
+        term.options.windowsPty = { backend: 'conpty', buildNumber: info.windows_build };
+      }
       sessionIdRef.current = info.id;
       onReadyRef.current?.(info.id);
       setPhase('connected');
@@ -162,29 +248,28 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     })().catch((err) => {
       if (disposed) return;
       setPhase('error');
-      term.write(`\r\n\x1b[31m启动 pwsh 失败: ${err}\x1b[0m\r\n`);
+      enqueueOutput(`\r\n\x1b[31m启动 pwsh 失败: ${err}\x1b[0m\r\n`);
     });
 
-    // Keystrokes -> shell stdin.
+    // Keystrokes -> shell stdin. Preserve the raw xterm.js data, including
+    // escape sequences for arrows and control keys, but send it FIFO.
     const dataDisposable = term.onData((data) => {
       const id = sessionIdRef.current;
-      if (id) {
-        SessionManager.WriteInput(id, data).catch(() => {});
-      }
+      if (id) enqueueInput(id, data);
     });
 
     // ConPTY output -> terminal, routed to this tab's session only.
     const offData = Events.On('term_data', (event: any) => {
       const payload = event?.data;
       if (payload && sessionIdRef.current && payload.id === sessionIdRef.current) {
-        term.write(payload.data);
+        enqueueOutput(payload.data);
       }
     });
     const offStatus = Events.On('term_status', (event: any) => {
       const payload = event?.data;
       if (payload && sessionIdRef.current && payload.id === sessionIdRef.current) {
         if (payload.data === 'disconnected') {
-          term.write('\r\n\x1b[90m[pwsh 会话已结束]\x1b[0m\r\n');
+          enqueueOutput('\r\n\x1b[90m[pwsh 会话已结束]\x1b[0m\r\n');
           setPhase('ended');
         }
       }

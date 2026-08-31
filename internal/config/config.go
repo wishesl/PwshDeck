@@ -30,20 +30,18 @@ const (
 // toggle + tab persistence) cannot corrupt the file.
 var fileMu sync.Mutex
 
-// configDirName is the per-user settings directory. legacyConfigDirName is the
-// directory used before the rename to PwshDeck; Load() migrates it on first run.
-const (
-	configDirName       = "PwshDeck"
-	legacyConfigDirName = "pwsh-mcp"
-)
+// These are variables so disposable test builds can override both paths with
+// -ldflags -X and avoid sharing settings with the normal application.
+var configDirName = "PwshDeck"
+var legacyConfigDirName = "pwsh-mcp"
 
 // TabPref is the persisted UI state of one terminal tab (sessions themselves
 // are not restored — each tab boots a fresh shell on startup).
 type TabPref struct {
 	// ID is the stable dockview panel id, so the persisted split layout can be
 	// matched back to the right tab on restore. Empty for legacy entries.
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
 	Accent string `json:"accent"`
 	// Pwd is the tab's last-known working directory; the restored shell boots
 	// here instead of the user's home directory. Empty means home.

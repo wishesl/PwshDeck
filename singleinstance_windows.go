@@ -9,15 +9,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// mutexName identifies the single running GUI instance. `Local\` scopes it to
-// the interactive session (the stdio --mcp mode intentionally skips this).
-const mutexName = `Local\PwshDeck-single-instance`
+// These defaults identify the normal GUI instance. They are variables rather
+// than constants so a disposable test build can override them with -ldflags -X
+// and run beside the normal application.
+var mutexName = `Local\PwshDeck-single-instance`
 
 // showEventName lets a second instance tell the running instance to reveal its
 // (possibly tray-hidden) windows. Revealing must go through Wails' own Show()
 // path — a bare ShowWindow(SW_SHOW) from the second process would surface an
 // empty/white WebView2 surface, because it skips chromium.Show().
-const showEventName = `Local\PwshDeck-show-request`
+var showEventName = `Local\PwshDeck-show-request`
 
 var singleInstanceHandle windows.Handle
 

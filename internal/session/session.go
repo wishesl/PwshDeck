@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"regexp"
 	"sync"
 	"time"
@@ -49,14 +50,15 @@ type TerminalSession struct {
 // SessionInfo is the wire-safe view of a session, shared by the Wails
 // bindings and the MCP tools.
 type SessionInfo struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Window    string `json:"window"`
-	Running   bool   `json:"running"`
-	CreatedAt string `json:"created_at"`
-	Cols      int    `json:"cols"`
-	Rows      int    `json:"rows"`
-	Pwd       string `json:"pwd"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Window       string `json:"window"`
+	Running      bool   `json:"running"`
+	CreatedAt    string `json:"created_at"`
+	Cols         int    `json:"cols"`
+	Rows         int    `json:"rows"`
+	Pwd          string `json:"pwd"`
+	WindowsBuild int    `json:"windows_build"`
 }
 
 // Info snapshots the current session state.
@@ -64,14 +66,15 @@ func (s *TerminalSession) Info() SessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return SessionInfo{
-		ID:        s.ID,
-		Title:     s.Title,
-		Window:    s.Window,
-		Running:   s.running,
-		CreatedAt: s.createdAt.Format(time.RFC3339),
-		Cols:      s.cols,
-		Rows:      s.rows,
-		Pwd:       s.Pwd,
+		ID:           s.ID,
+		Title:        s.Title,
+		Window:       s.Window,
+		Running:      s.running,
+		CreatedAt:    s.createdAt.Format(time.RFC3339),
+		Cols:         s.cols,
+		Rows:         s.rows,
+		Pwd:          s.Pwd,
+		WindowsBuild: hostWindowsBuild,
 	}
 }
 
@@ -161,8 +164,25 @@ func (s *TerminalSession) writeInput(data string) error {
 		return fmt.Errorf("session %s is not running", s.ID)
 	}
 	s.lastActive = time.Now()
-	_, err := s.cpty.Write([]byte(data))
-	return err
+
+	// Treat ConPTY as an io.Writer: a successful call is allowed to consume
+	// fewer bytes than requested, and losing the tail of an escape sequence can
+	// corrupt cursor movement during key repeat.
+	remaining := []byte(data)
+	for len(remaining) > 0 {
+		n, err := s.cpty.Write(remaining)
+		if n < 0 || n > len(remaining) {
+			return fmt.Errorf("invalid ConPTY write count %d for %d bytes", n, len(remaining))
+		}
+		remaining = remaining[n:]
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }
 
 func (s *TerminalSession) resize(cols, rows int) error {

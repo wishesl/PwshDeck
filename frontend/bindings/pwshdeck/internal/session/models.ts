@@ -14,4 +14,5 @@ export interface SessionInfo {
     "cols": number;
     "rows": number;
     "pwd": string;
+    "windows_build": number;
 }
