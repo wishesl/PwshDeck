@@ -42,6 +42,8 @@ export default function App() {
   const [dockReady, setDockReady] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [layoutDraggable, setLayoutDraggable] = useState(true);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [layoutError, setLayoutError] = useState('');
@@ -68,6 +70,10 @@ export default function App() {
   useEffect(() => {
     layoutDraggableRef.current = layoutDraggable;
   }, [layoutDraggable]);
+  useEffect(() => {
+    // Always-on-top is intentionally session-only and starts disabled for each window.
+    Window.SetAlwaysOnTop(false).catch(() => {});
+  }, []);
 
   // Latest-value refs so the (once-invoked) dockview callbacks never go stale.
   const readyRef = useRef<(tabId: string, sessionId: string) => void>(() => {});
@@ -635,6 +641,39 @@ export default function App() {
           <span>设置</span>
         </button>
         <div className="window-controls">
+          <button
+            type="button"
+            className={`win-btn pin-btn ${alwaysOnTop ? 'active' : ''}`}
+            title={alwaysOnTop ? '取消钉住' : '钉住'}
+            aria-label={alwaysOnTop ? '取消钉住' : '钉住'}
+            aria-pressed={alwaysOnTop}
+            disabled={pinBusy}
+            onClick={async () => {
+              const next = !alwaysOnTop;
+              setPinBusy(true);
+              try {
+                await Window.SetAlwaysOnTop(next);
+                setAlwaysOnTop(next);
+              } catch {
+                // Keep the indicator unchanged when the native call fails.
+              } finally {
+                setPinBusy(false);
+              }
+            }}
+          >
+            {alwaysOnTop ? (
+              <span className="pin-status-dot visible" />
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="m10.9 1.8 3.3 3.3-1.2 1.2-1-.3-2.2 2.2 1.1 1.1-.9.9-2.6-1.2-3.1 3.1.8.8-.8.8-1.8-1.8.8-.8.8.8 3.1-3.1-1.2-2.6.9-.9 1.1 1.1 2.2-2.2-.3-1 1.2-1.2Z"
+                  fill="currentColor"
+                />
+                <path d="m8.1 9.7-4.4 4.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            )}
+            <span>{alwaysOnTop ? '已钉住' : '钉住'}</span>
+          </button>
           <button
             type="button"
             className="win-btn"
