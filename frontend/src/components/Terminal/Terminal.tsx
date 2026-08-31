@@ -182,12 +182,32 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
         /* terminal not ready yet */
       }
     };
+    let layoutFrame = 0;
+    let settledLayoutFrame = 0;
+    const syncStableSize = () => {
+      if (disposed) return;
+      if (layoutFrame) cancelAnimationFrame(layoutFrame);
+      if (settledLayoutFrame) cancelAnimationFrame(settledLayoutFrame);
+      layoutFrame = requestAnimationFrame(() => {
+        if (disposed) return;
+        syncSize();
+        settledLayoutFrame = requestAnimationFrame(() => {
+          if (!disposed) syncSize();
+        });
+      });
+    };
     syncSize();
     window.addEventListener('resize', syncSize);
     // Re-fit when the pane resizes (e.g. dragging a split divider), not just
     // when the whole window resizes.
     const resizeObserver = new ResizeObserver(syncSize);
     resizeObserver.observe(container);
+    // The initial Dockview layout and font metrics can settle after term.open.
+    // Re-fitting on the next two frames prevents ConPTY from keeping its 120x30
+    // bootstrap dimensions while long startup output is already being written.
+    syncStableSize();
+    const fontReady = document.fonts?.ready;
+    if (fontReady) void fontReady.then(syncStableSize).catch(() => {});
 
     // Show a small copy/paste menu when the user finishes selecting text or
     // right-clicks. Capture phase so xterm's own event handling (which may
@@ -247,6 +267,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       onReadyRef.current?.(info.id);
       setPhase('connected');
       syncSize();
+      syncStableSize();
     })().catch((err) => {
       if (disposed) return;
       setPhase('error');
@@ -284,6 +305,8 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       offStatus();
       window.removeEventListener('resize', syncSize);
       resizeObserver.disconnect();
+      if (layoutFrame) cancelAnimationFrame(layoutFrame);
+      if (settledLayoutFrame) cancelAnimationFrame(settledLayoutFrame);
       container.removeEventListener('mouseup', onMouseUp, true);
       container.removeEventListener('contextmenu', onContextMenu, true);
       document.removeEventListener('mousedown', onDocMouseDown, true);
