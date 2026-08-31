@@ -354,9 +354,20 @@
 
 .dv-tab {
   position: relative;
+  /* The custom tab owns its padding; Dockview's outer padding made the live
+     tab wider than the content measured by the drag ghost. */
+  padding: 0 2px;
   /* Override dockview's default `cursor: pointer` so the whole tab (including
      its padding ring around .pd-tab) reads as draggable. */
   cursor: grab;
+}
+
+/* Dockview gives every React tab part width: 100%. That is correct for its
+   default tab, but it makes a custom content-sized tab expand when the drag
+   ghost is detached from the tab strip. */
+.dv-tab > .dv-react-part {
+  width: max-content !important;
+  min-width: 0;
 }
 
 .dv-tab:active {
@@ -386,6 +397,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  width: max-content;
+  min-width: 0;
   height: 100%;
   padding: 0 8px 0 10px;
   box-sizing: border-box;
@@ -434,8 +447,9 @@
 }
 
 .pd-tab-title {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

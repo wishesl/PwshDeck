@@ -27,6 +27,14 @@ type TerminalParams = { tabId: string; accent: string; pwd: string };
 let uid = 0;
 const nextTabId = () => `tab-${++uid}`;
 
+const DOCKVIEW_THEME = {
+  name: 'PwshDeck',
+  className: 'dockview-theme-abyss',
+  colorScheme: 'dark',
+  tabAnimation: 'default',
+  dndTabIndicator: 'line',
+} as const;
+
 export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -428,6 +436,7 @@ export default function App() {
         <div style={{ width: '100%', height: '100%' }}>
           <DockviewReact
             className="dockview-theme-abyss"
+            theme={DOCKVIEW_THEME}
             onReady={onReady}
             components={components}
             defaultTabComponent={defaultTabComponent}
