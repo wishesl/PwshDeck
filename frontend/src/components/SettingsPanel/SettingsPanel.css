@@ -1,0 +1,96 @@
+.settings-panel {
+  padding: 18px 20px 22px;
+  --wails-draggable: no-drag;
+}
+
+.settings-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section-copy {
+  min-width: 0;
+}
+
+.settings-section h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-section p {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.settings-switch {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-switch span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transform: translateX(0);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.settings-switch.on {
+  border-color: rgba(122, 162, 247, 0.55);
+  background: rgba(122, 162, 247, 0.3);
+}
+
+.settings-switch.on span {
+  background: var(--accent-strong);
+  transform: translateX(18px);
+}
+
+.settings-switch:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.settings-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-mode-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.settings-mode-dot.on {
+  background: var(--success);
+}
+
+.settings-error {
+  margin: 14px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}

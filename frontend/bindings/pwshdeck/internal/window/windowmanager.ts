@@ -37,6 +37,14 @@ export function GetLayout(): $CancellablePromise<string> {
 }
 
 /**
+ * GetLayoutDraggable returns whether the current layout allows tabs to leave
+ * their window or create split panes.
+ */
+export function GetLayoutDraggable(): $CancellablePromise<boolean> {
+    return $Call.ByID(4036755605);
+}
+
+/**
  * GetTabPrefs returns the persisted terminal tab layout (title + accent per
  * tab). Sessions themselves are not persisted — each tab boots a fresh shell.
  */
@@ -82,6 +90,14 @@ export function QuitApp(): $CancellablePromise<void> {
  */
 export function SetLayout(json: string): $CancellablePromise<void> {
     return $Call.ByID(499720162, json);
+}
+
+/**
+ * SetLayoutDraggable persists the layout mode. Switching to a fixed layout also
+ * closes any other GUI windows so only the caller's window remains.
+ */
+export function SetLayoutDraggable(draggable: boolean, currentWindow: string): $CancellablePromise<void> {
+    return $Call.ByID(2727626209, draggable, currentWindow);
 }
 
 /**

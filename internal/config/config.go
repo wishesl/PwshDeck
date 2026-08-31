@@ -67,6 +67,9 @@ type Config struct {
 	// It restores how tabs are arranged into panes on launch. Empty = default
 	// single pane.
 	Layout string `json:"layout"`
+	// LayoutDraggable controls whether tabs can be dragged between windows or
+	// split into additional panes. The default keeps the existing behavior.
+	LayoutDraggable bool `json:"layout_draggable"`
 }
 
 // Load reads config.json from the user config directory, falling back to
@@ -104,6 +107,7 @@ func Defaults() *Config {
 		MCPSessionTimeoutMinutes: DefaultMCPSessionTimeoutMinutes,
 		MaxSessions:              DefaultMaxSessions,
 		IdleTimeoutMinutes:       DefaultIdleTimeoutMinutes,
+		LayoutDraggable:          true,
 	}
 }
 

@@ -73,6 +73,9 @@ func (w *WindowManager) NewWindow() (*WindowInfo, error) {
 	if w.app == nil {
 		return nil, fmt.Errorf("service not initialized: app is nil")
 	}
+	if !config.Load().LayoutDraggable && len(w.app.Window.GetAll()) > 0 {
+		return nil, fmt.Errorf("additional windows are disabled by the current layout setting")
+	}
 	w.mu.Lock()
 	w.counter++
 	n := w.counter
@@ -185,6 +188,34 @@ func (w *WindowManager) SetLayout(json string) error {
 	cfg := config.Load()
 	cfg.Layout = json
 	return cfg.Save()
+}
+
+// GetLayoutDraggable returns whether the current layout allows tabs to leave
+// their window or create split panes.
+func (w *WindowManager) GetLayoutDraggable() bool {
+	return config.Load().LayoutDraggable
+}
+
+// SetLayoutDraggable persists the layout mode. Switching to a fixed layout also
+// closes any other GUI windows so only the caller's window remains.
+func (w *WindowManager) SetLayoutDraggable(draggable bool, currentWindow string) error {
+	cfg := config.Load()
+	cfg.LayoutDraggable = draggable
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+	if draggable || w.app == nil {
+		return nil
+	}
+	if currentWindow == "" {
+		currentWindow = w.primary
+	}
+	for _, win := range w.app.Window.GetAll() {
+		if win.Name() != currentWindow {
+			win.Close()
+		}
+	}
+	return nil
 }
 
 // HideToTray hides every window but keeps the app (sessions + MCP server)

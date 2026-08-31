@@ -10,6 +10,7 @@ import {
 import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
 import McpPanel from './components/McpPanel';
+import SettingsPanel from './components/SettingsPanel/SettingsPanel';
 import TabMenu from './components/TabMenu';
 import Terminal, { DEFAULT_ACCENT } from './components/Terminal';
 import './App.css';
@@ -39,7 +40,15 @@ export default function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [dockReady, setDockReady] = useState(false);
-  const [mcpOpen, setMcpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [layoutDraggable, setLayoutDraggable] = useState(true);
+  const [layoutBusy, setLayoutBusy] = useState(false);
+  const [layoutError, setLayoutError] = useState('');
+  const [activeTabId, setActiveTabId] = useState('');
+  const [dragTabId, setDragTabId] = useState<string | null>(null);
+  const [dropTabId, setDropTabId] = useState<string | null>(null);
+  const [dropSide, setDropSide] = useState<'before' | 'after' | null>(null);
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const [closeConfirm, setCloseConfirm] = useState<{ tabId: string } | null>(null);
 
@@ -51,9 +60,13 @@ export default function App() {
   const layoutAppliedRef = useRef(false);
   const restoringRef = useRef(false);
   const layoutTimerRef = useRef<number | null>(null);
+  const layoutDraggableRef = useRef(true);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+  useEffect(() => {
+    layoutDraggableRef.current = layoutDraggable;
+  }, [layoutDraggable]);
 
   // Latest-value refs so the (once-invoked) dockview callbacks never go stale.
   const readyRef = useRef<(tabId: string, sessionId: string) => void>(() => {});
@@ -83,7 +96,7 @@ export default function App() {
   persistLayoutRef.current = () => {
     const api = apiRef.current;
     if (!api) return;
-    WindowManager.SetLayout(JSON.stringify(api.toJSON())).catch(() => {});
+    WindowManager.SetLayout(layoutDraggableRef.current ? JSON.stringify(api.toJSON()) : '').catch(() => {});
   };
 
   const renameTabRef = useRef<(tabId: string, title: string) => void>(() => {});
@@ -105,6 +118,71 @@ export default function App() {
     if (panel) {
       const p = (panel.params ?? {}) as TerminalParams;
       panel.api.updateParameters({ tabId, accent, pwd: p.pwd });
+    }
+  };
+
+  const syncFixedTabOrder = () => {
+    if (layoutDraggableRef.current) return;
+    const api = apiRef.current;
+    if (!api) return;
+    const byId = new Map(tabsRef.current.map((tab) => [tab.id, tab]));
+    const ordered = api.panels.map((panel) => byId.get(panel.id)).filter((tab): tab is Tab => !!tab);
+    if (ordered.length !== tabsRef.current.length || ordered.some((tab, index) => tab.id !== tabsRef.current[index]?.id)) {
+      tabsRef.current = ordered;
+      setTabs(ordered);
+      persistTabsRef.current(ordered);
+    }
+  };
+
+  const moveFixedTab = (sourceId: string, targetId: string, side: 'before' | 'after') => {
+    if (layoutDraggableRef.current || sourceId === targetId) return;
+    const api = apiRef.current;
+    const source = api?.getPanel(sourceId);
+    const target = api?.getPanel(targetId);
+    if (!api || !source || !target) return;
+    const remaining = api.panels.filter((panel) => panel.id !== sourceId);
+    const targetIndex = remaining.findIndex((panel) => panel.id === targetId);
+    if (targetIndex < 0) return;
+    source.api.moveTo({
+      group: target.api.group,
+      index: targetIndex + (side === 'after' ? 1 : 0),
+    });
+    window.setTimeout(syncFixedTabOrder, 0);
+  };
+
+  const changeLayoutDraggable = async (draggable: boolean) => {
+    setLayoutBusy(true);
+    setLayoutError('');
+    try {
+      let currentWindow = windowNameRef.current;
+      if (!currentWindow) {
+        try {
+          currentWindow = await Window.Name();
+        } catch {
+          /* browser dev */
+        }
+      }
+      await WindowManager.SetLayoutDraggable(draggable, currentWindow);
+      layoutDraggableRef.current = draggable;
+      setLayoutDraggable(draggable);
+      if (!draggable) {
+        const api = apiRef.current;
+        const panels = api?.panels ?? [];
+        const first = panels[0];
+        if (first && api) {
+          for (let i = 1; i < panels.length; i += 1) {
+            panels[i].api.moveTo({ group: first.api.group, index: i });
+          }
+        }
+        await WindowManager.SetLayout('');
+        window.setTimeout(syncFixedTabOrder, 0);
+      } else {
+        persistLayoutRef.current();
+      }
+    } catch (err) {
+      setLayoutError(String(err));
+    } finally {
+      setLayoutBusy(false);
     }
   };
 
@@ -180,11 +258,19 @@ export default function App() {
     let cancelled = false;
     (async () => {
       let prefs: { id: string; title: string; accent: string; pwd: string }[] = [];
+      let draggable = true;
       try {
         prefs = (await WindowManager.GetTabPrefs()) ?? [];
       } catch {
         /* browser dev or first run */
       }
+      try {
+        draggable = await WindowManager.GetLayoutDraggable();
+      } catch {
+        /* browser dev or older backend */
+      }
+      layoutDraggableRef.current = draggable;
+      setLayoutDraggable(draggable);
       let layoutJSON = '';
       try {
         layoutJSON = await WindowManager.GetLayout();
@@ -210,7 +296,7 @@ export default function App() {
       }
       uid = maxN;
       tabSeqRef.current = restored.length;
-      layoutRef.current = layoutJSON || '';
+      layoutRef.current = draggable ? layoutJSON || '' : '';
       setTabs(restored);
       setLoaded(true);
     })();
@@ -223,24 +309,28 @@ export default function App() {
   useEffect(() => {
     if (!loaded || !dockReady || !apiRef.current) return;
     const api = apiRef.current;
-    const addPanel = (tab: Tab) => {
-      api.addPanel({
+    const addPanel = (tab: Tab, index?: number) => {
+      const options = {
         id: tab.id,
-        component: 'terminal',
+        component: 'terminal' as const,
         title: tab.title,
         params: { tabId: tab.id, accent: tab.accent, pwd: tab.pwd } satisfies TerminalParams,
-        renderer: 'always',
-      });
+        renderer: 'always' as const,
+      };
+      if (index !== undefined && api.groups[0]) {
+        api.addPanel({ ...options, position: { referenceGroup: api.groups[0], index } });
+      } else {
+        api.addPanel(options);
+      }
     };
 
     if (!layoutAppliedRef.current) {
       layoutAppliedRef.current = true;
       restoringRef.current = true;
       try {
-        // Restore the saved split arrangement, then reconcile it against the
-        // tab roster (tabs carry the authoritative title/accent/pwd, since the
-        // layout may be stale if metadata changed without a structural move).
-        if (layoutRef.current) {
+        // Fixed layout mode deliberately ignores a previous split arrangement;
+        // adding panels below keeps every tab in one group.
+        if (layoutDraggableRef.current && layoutRef.current) {
           try {
             api.fromJSON(JSON.parse(layoutRef.current));
           } catch {
@@ -270,7 +360,7 @@ export default function App() {
     } else {
       // Later roster changes: just ensure each tab has a panel (e.g. new tab).
       for (const tab of tabs) {
-        if (!api.getPanel(tab.id)) addPanel(tab);
+        if (!api.getPanel(tab.id)) addPanel(tab, layoutDraggableRef.current ? undefined : 0);
       }
     }
   }, [loaded, dockReady, tabs]);
@@ -351,6 +441,12 @@ export default function App() {
       if (layoutTimerRef.current) window.clearTimeout(layoutTimerRef.current);
       layoutTimerRef.current = window.setTimeout(() => persistLayoutRef.current(), 400);
     });
+    event.api.onDidActivePanelChange((event) => {
+      setActiveTabId(event.panel?.id ?? '');
+    });
+    event.api.onDidMovePanel(() => {
+      window.setTimeout(syncFixedTabOrder, 0);
+    });
   };
 
   const addTab = () => {
@@ -362,7 +458,7 @@ export default function App() {
       pwd: '',
       sessionId: null,
     };
-    const next = [...tabsRef.current, tab];
+    const next = layoutDraggableRef.current ? [...tabsRef.current, tab] : [tab, ...tabsRef.current];
     tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
@@ -372,7 +468,8 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setMcpOpen(false);
+        setSettingsOpen(false);
+        setOverflowOpen(false);
         setClosePromptOpen(false);
         setTabMenu(null);
         setCloseConfirm(null);
@@ -384,6 +481,7 @@ export default function App() {
 
   const menuTab = tabMenu ? tabs.find((t) => t.id === tabMenu.tabId) : null;
   const confirmTab = closeConfirm ? tabs.find((t) => t.id === closeConfirm.tabId) : null;
+  const selectedTabId = activeTabId || apiRef.current?.activePanel?.id || tabs[0]?.id;
 
   return (
     <div className="app">
@@ -391,12 +489,139 @@ export default function App() {
         <div className="brand">
           Pwsh<span className="brand-accent">Deck</span>
         </div>
+        {!layoutDraggable && (
+          <div className="topbar-tabs" role="tablist" aria-label="终端标签">
+            {tabs.slice(0, 4).map((tab) => (
+              <div
+                key={tab.id}
+                className={`topbar-tab ${tab.id === selectedTabId ? 'active' : ''} ${
+                  tab.id === dropTabId && dropSide === 'before' ? 'drop-before' : ''
+                } ${tab.id === dropTabId && dropSide === 'after' ? 'drop-after' : ''}`}
+                role="tab"
+                aria-selected={tab.id === selectedTabId}
+                draggable
+                onClick={() => {
+                  const panel = apiRef.current?.getPanel(tab.id);
+                  if (panel) panel.api.group.model.openPanel(panel);
+                }}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', tab.id);
+                  setDragTabId(tab.id);
+                }}
+                onDragOver={(e) => {
+                  if (!dragTabId || dragTabId === tab.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const side = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+                  setDropTabId(tab.id);
+                  setDropSide(side);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragTabId && dropSide) moveFixedTab(dragTabId, tab.id, dropSide);
+                  setDragTabId(null);
+                  setDropTabId(null);
+                  setDropSide(null);
+                }}
+                onDragEnd={() => {
+                  setDragTabId(null);
+                  setDropTabId(null);
+                  setDropSide(null);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+                }}
+              >
+                <span className="topbar-tab-dot" style={{ background: tab.accent }} />
+                <span className="topbar-tab-title">{tab.title}</span>
+                <button
+                  type="button"
+                  className="topbar-tab-close"
+                  title="关闭"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    requestCloseTabRef.current(tab.id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {!layoutDraggable && tabs.length > 4 && (
+          <div className="topbar-menu-wrap">
+            <button
+              type="button"
+              className={`topbar-more-btn ${overflowOpen ? 'open' : ''}`}
+              title="更多终端"
+              onClick={() => setOverflowOpen((open) => !open)}
+            >
+              更多 <span>{tabs.length - 4}</span>
+            </button>
+            {overflowOpen && (
+              <div className="topbar-dropdown topbar-overflow-menu">
+                {tabs.slice(4).map((tab) => (
+                  <div
+                    key={tab.id}
+                    className={`topbar-dropdown-item ${tab.id === selectedTabId ? 'active' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      const firstId = tabs[0]?.id;
+                      if (firstId && firstId !== tab.id) moveFixedTab(tab.id, firstId, 'before');
+                      const panel = apiRef.current?.getPanel(tab.id);
+                      if (panel) panel.api.group.model.openPanel(panel);
+                      setOverflowOpen(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        e.currentTarget.click();
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+                      setOverflowOpen(false);
+                    }}
+                  >
+                    <span className="topbar-tab-dot" style={{ background: tab.accent }} />
+                    <span className="topbar-dropdown-title">{tab.title}</span>
+                    <button
+                      type="button"
+                      className="topbar-dropdown-close"
+                      title="关闭"
+                      aria-label={`关闭 ${tab.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestCloseTabRef.current(tab.id);
+                        setOverflowOpen(false);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         <button type="button" className="new-session-btn" title="新建会话" onClick={addTab}>
           ＋ 新建会话
         </button>
-        <button type="button" className="mcp-btn" onClick={() => setMcpOpen(true)}>
-          MCP 管理
+        <button type="button" className="settings-btn" title="设置" onClick={() => setSettingsOpen(true)}>
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M6.9 1.2h2.2l.4 1.5c.4.1.8.3 1.2.5l1.4-.7 1.6 1.6-.7 1.4c.2.4.4.8.5 1.2l1.5.4v2.2l-1.5.4c-.1.4-.3.8-.5 1.2l.7 1.4-1.6 1.6-1.4-.7c-.4.2-.8.4-1.2.5l-.4 1.5H6.9l-.4-1.5c-.4-.1-.8-.3-1.2-.5l-1.4.7-1.6-1.6.7-1.4c-.2-.4-.4-.8-.5-1.2L1 9.3V7.1l1.5-.4c.1-.4.3-.8.5-1.2l-.7-1.4 1.6-1.6 1.4.7c.4-.2.8-.4 1.2-.5l.4-1.5ZM8 6a2.2 2.2 0 1 0 0 4.4A2.2 2.2 0 0 0 8 6Z"
+              fill="currentColor"
+            />
+          </svg>
+          <span>设置</span>
         </button>
         <div className="window-controls">
           <button
@@ -435,8 +660,9 @@ export default function App() {
       <main className="content">
         <div style={{ width: '100%', height: '100%' }}>
           <DockviewReact
-            className="dockview-theme-abyss"
+            className={`dockview-theme-abyss ${!layoutDraggable ? 'dockview-fixed-layout' : ''}`}
             theme={DOCKVIEW_THEME}
+            disableDnd={!layoutDraggable}
             onReady={onReady}
             components={components}
             defaultTabComponent={defaultTabComponent}
@@ -460,6 +686,33 @@ export default function App() {
           }}
           onClose={() => setTabMenu(null)}
         />
+      )}
+
+      {settingsOpen && (
+        <div className="modal-overlay" onClick={() => setSettingsOpen(false)}>
+          <div className="modal settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>设置</h2>
+              <button type="button" className="modal-close" title="关闭" onClick={() => setSettingsOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="settings-modal-body">
+              <SettingsPanel
+                draggable={layoutDraggable}
+                busy={layoutBusy}
+                error={layoutError}
+                onChange={changeLayoutDraggable}
+              />
+              <section className="settings-mcp-section">
+                <div className="settings-subhead">
+                  <h2>MCP 管理</h2>
+                </div>
+                <McpPanel />
+              </section>
+            </div>
+          </div>
+        </div>
       )}
 
       {closePromptOpen && (
@@ -536,21 +789,6 @@ export default function App() {
         </div>
       )}
 
-      {mcpOpen && (
-        <div className="modal-overlay" onClick={() => setMcpOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h2>MCP 管理</h2>
-              <button type="button" className="modal-close" title="关闭" onClick={() => setMcpOpen(false)}>
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <McpPanel />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
