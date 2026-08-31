@@ -119,24 +119,26 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       drainInput();
     };
 
-    // Event delivery should be ordered too: PSReadLine redraws the prompt with
-    // cursor-control sequences, so applying a later chunk before an earlier one
-    // leaves xterm.js showing a cursor different from the shell's real state.
-    let outputTail = Promise.resolve();
+    // Coalesce callbacks from the same event turn, then let xterm.js manage its
+    // own parser queue. Waiting for each write callback adds visible latency
+    // when PSReadLine emits frequent cursor redraws.
+    let pendingOutput = '';
+    let outputScheduled = false;
     const enqueueOutput = (data: string) => {
-      outputTail = outputTail
-        .catch(() => {})
-        .then(
-          () =>
-            new Promise<void>((resolve) => {
-              if (disposed) {
-                resolve();
-                return;
-              }
-              term.write(data, resolve);
-            }),
-        )
-        .catch(() => {});
+      if (disposed) return;
+      pendingOutput += data;
+      if (outputScheduled) return;
+      outputScheduled = true;
+      queueMicrotask(() => {
+        outputScheduled = false;
+        if (disposed) {
+          pendingOutput = '';
+          return;
+        }
+        const chunk = pendingOutput;
+        pendingOutput = '';
+        if (chunk) term.write(chunk);
+      });
     };
 
     // Resize requests can also arrive out of order during a window or pane
