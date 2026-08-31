@@ -95,6 +95,14 @@ func Load() *Config {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return def
 	}
+	// Keep existing installations in the original draggable mode when the
+	// newly introduced field is absent. An explicit false must remain false.
+	var layoutMode struct {
+		LayoutDraggable *bool `json:"layout_draggable"`
+	}
+	if err := json.Unmarshal(data, &layoutMode); err == nil && layoutMode.LayoutDraggable == nil {
+		cfg.LayoutDraggable = def.LayoutDraggable
+	}
 	cfg.sanitize()
 	return cfg
 }

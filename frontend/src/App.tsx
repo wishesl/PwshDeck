@@ -53,6 +53,7 @@ export default function App() {
   const [closeConfirm, setCloseConfirm] = useState<{ tabId: string } | null>(null);
 
   const apiRef = useRef<DockviewApi | null>(null);
+  const overflowMenuRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<Tab[]>(tabs);
   const tabSeqRef = useRef(1);
   const pwdTimerRef = useRef<number | null>(null);
@@ -464,6 +465,16 @@ export default function App() {
     persistTabsRef.current(next);
   };
 
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !overflowMenuRef.current?.contains(target)) setOverflowOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [overflowOpen]);
+
   // Esc closes whichever overlay is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -553,7 +564,7 @@ export default function App() {
           </div>
         )}
         {!layoutDraggable && tabs.length > 4 && (
-          <div className="topbar-menu-wrap">
+          <div className="topbar-menu-wrap" ref={overflowMenuRef}>
             <button
               type="button"
               className={`topbar-more-btn ${overflowOpen ? 'open' : ''}`}
