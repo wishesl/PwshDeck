@@ -71,10 +71,17 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [input, setInput] = useState('');
+  // Diagnostic: sequence of event types received during the current run, so a
+  // misbehaving tool chain is visible instead of silently showing nothing.
+  const [eventTrace, setEventTrace] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
+
+  const trace = (type: string) => {
+    setEventTrace((prev) => (prev.length > 60 ? [...prev.slice(-59), type] : [...prev, type]));
+  };
 
   // Append a text delta to the trailing block when it is the same kind,
   // otherwise start a new block. This keeps the conversation in the AI's
@@ -127,6 +134,7 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     const off = Events.On('agent_event', (event: any) => {
       const ev = (event?.data ?? event) as AgentEventPayload;
       if (!ev || typeof ev.type !== 'string') return;
+      trace(ev.type);
       switch (ev.type) {
         case 'status':
           setStatus(
@@ -306,6 +314,12 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           </button>
         )}
       </div>
+
+      {eventTrace.length > 0 && (
+        <div className="agent-trace" title="本次运行收到的事件序列（调试用）">
+          {eventTrace.join(' → ')}
+        </div>
+      )}
 
       <div className="agent-scroll" ref={scrollRef} onScroll={onScroll}>
         {blocks.length === 0 && (

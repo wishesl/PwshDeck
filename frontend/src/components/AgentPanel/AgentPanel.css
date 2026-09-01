@@ -28,6 +28,22 @@
   color: var(--text-strong);
 }
 
+/* Diagnostic: the exact sequence of agent_event types received during the
+   current run. Visible so a broken tool chain is obvious instead of silent. */
+.agent-trace {
+  flex: none;
+  padding: 4px 14px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: rgba(122, 162, 247, 0.06);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow-x: auto;
+  max-height: 28px;
+}
+
 .agent-logo {
   display: inline-flex;
   align-items: center;

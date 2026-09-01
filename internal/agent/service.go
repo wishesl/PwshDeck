@@ -74,6 +74,7 @@ func (a *AgentService) SetLLMConfig(cfg config.LLMConfig) error {
 	if err := c.Save(); err != nil {
 		log.Printf("agent: failed to persist LLM config: %v", err)
 	}
+	agentLogf("SetLLMConfig: provider=%s model=%s endpoint=%q api_key_set=%v tools=6", cfg.Provider, cfg.Model, cfg.Endpoint, cfg.APIKey != "")
 	a.emit(AgentEvent{Type: EventConfig})
 	return nil
 }
@@ -82,6 +83,7 @@ func (a *AgentService) SetLLMConfig(cfg config.LLMConfig) error {
 func (a *AgentService) rebuildLocked() error {
 	model, err := buildLLM(a.cfg)
 	if err != nil {
+		agentLogf("rebuild failed: %v", err)
 		return err
 	}
 	ag, err := dive.NewAgent(dive.AgentOptions{
@@ -94,10 +96,12 @@ func (a *AgentService) rebuildLocked() error {
 		ToolIterationLimit: 25,
 	})
 	if err != nil {
+		agentLogf("NewAgent failed: %v", err)
 		return err
 	}
 	a.agent = ag
 	a.sysShown = false
+	agentLogf("agent rebuilt: provider=%s model=%s endpoint=%q", a.cfg.Provider, a.cfg.Model, a.cfg.Endpoint)
 	return nil
 }
 
@@ -147,6 +151,7 @@ func (a *AgentService) SendMessage(input string) error {
 	go func() {
 		defer a.finishRun()
 		a.emitSystemPromptOnce()
+		agentLogf("SendMessage: input=%q", input)
 		resp, err := agent.CreateResponse(ctx,
 			dive.WithInput(input),
 			dive.WithEventCallback(a.eventCallback),
@@ -240,8 +245,10 @@ func (a *AgentService) finishRun() {
 func (a *AgentService) handleResult(resp *dive.Response, err error) {
 	if err != nil {
 		if a.isCanceled() {
+			agentLogf("handleResult: canceled")
 			a.emit(AgentEvent{Type: EventDone, Text: "(已取消)"})
 		} else {
+			agentLogf("handleResult: error: %v", err)
 			a.emit(AgentEvent{Type: EventError, Text: err.Error()})
 		}
 		return
@@ -257,6 +264,7 @@ func (a *AgentService) handleResult(resp *dive.Response, err error) {
 		}
 		cmd, _ := call.Metadata["command"].(string)
 		sid, _ := call.Metadata["session_id"].(string)
+		agentLogf("handleResult: SUSPENDED tool=%s id=%s command=%q session=%s", call.Name, call.ID, cmd, sid)
 		a.emit(AgentEvent{
 			Type:      EventPending,
 			CallID:    call.ID,
@@ -273,6 +281,7 @@ func (a *AgentService) handleResult(resp *dive.Response, err error) {
 	if resp != nil {
 		text = resp.OutputText()
 	}
+	agentLogf("handleResult: DONE text_len=%d", len(text))
 	a.emit(AgentEvent{Type: EventDone, Text: text})
 }
 
@@ -297,10 +306,12 @@ func (a *AgentService) eventCallback(ctx context.Context, item *dive.ResponseIte
 			// Reasoning content (e.g. DeepSeek reasoner / thinking models)
 			// streams as a separate collapsible "deep thinking" block.
 			if item.Event.Delta.Thinking != "" {
+				agentLogf("eventCallback: thinking_delta len=%d", len(item.Event.Delta.Thinking))
 				a.emit(AgentEvent{Type: EventThinking, Text: item.Event.Delta.Thinking})
 			}
 		default:
 			if item.Event.Delta.Text != "" {
+				agentLogf("eventCallback: text_delta len=%d", len(item.Event.Delta.Text))
 				a.emit(AgentEvent{Type: EventDelta, Text: item.Event.Delta.Text})
 			}
 		}
@@ -310,6 +321,7 @@ func (a *AgentService) eventCallback(ctx context.Context, item *dive.ResponseIte
 			if b, e := json.Marshal(item.ToolCall.Input); e == nil {
 				input = string(b)
 			}
+			agentLogf("eventCallback: TOOL_CALL id=%s name=%s input=%s", item.ToolCall.ID, item.ToolCall.Name, input)
 			a.emit(AgentEvent{Type: EventToolCall, CallID: item.ToolCall.ID, Tool: item.ToolCall.Name, Input: input})
 		}
 	case dive.ResponseItemTypeToolCallResult:
@@ -318,13 +330,24 @@ func (a *AgentService) eventCallback(ctx context.Context, item *dive.ResponseIte
 			if r := item.ToolCallResult.Result; r != nil {
 				output = toolResultText(r)
 			}
+			agentLogf("eventCallback: TOOL_RESULT id=%s name=%s output_len=%d output_head=%q", item.ToolCallResult.ID, item.ToolCallResult.Name, len(output), truncate(output, 200))
 			a.emit(AgentEvent{Type: EventToolResult, CallID: item.ToolCallResult.ID, Tool: item.ToolCallResult.Name, Output: output})
 		}
 	}
 	return nil
 }
 
+// truncate shortens a string for log lines, appending "..." when cut.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
 func (a *AgentService) emit(ev AgentEvent) {
+	agentLogf("EMIT type=%s state=%q text_len=%d call_id=%s tool=%s input_len=%d output_len=%d command=%q session=%s",
+		ev.Type, ev.State, len(ev.Text), ev.CallID, ev.Tool, len(ev.Input), len(ev.Output), ev.Command, ev.SessionID)
 	if a.app != nil {
 		a.app.Event.Emit(EventAgent, ev)
 	}
