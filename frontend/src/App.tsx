@@ -481,9 +481,23 @@ export default function App() {
     const existing = api.getPanel('agent');
     if (existing) {
       existing.api.group.model.openPanel(existing);
-    } else {
-      api.addPanel({ id: 'agent', component: 'agent', title: 'AI 助手', renderer: 'always' });
+      return;
     }
+    // Split the current view: place the agent in a right-hand pane next to the
+    // active panel (fall back to the first panel present in the grid).
+    const reference = api.activePanel ?? (api.panels.length > 0 ? api.panels[0] : undefined);
+    const position = reference
+      ? { direction: 'right' as const, referencePanel: reference.id }
+      : { direction: 'right' as const };
+    const panel = api.addPanel({
+      id: 'agent',
+      component: 'agent',
+      title: 'AI 助手',
+      renderer: 'always',
+      position,
+    });
+    // Give the agent pane a fixed slim width, leaving the terminals most space.
+    panel.api.setSize({ width: Math.max(340, Math.round(api.width * 0.3)) });
   };
 
   useEffect(() => {

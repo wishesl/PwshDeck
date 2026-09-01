@@ -333,6 +333,35 @@
   font-size: 11px;
 }
 
+.agent-tool-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-tool-part {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-tool-part:not(:first-child) {
+  border-top: 1px dashed var(--border);
+}
+
+.agent-tool-part-label {
+  padding: 5px 10px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.agent-tool-running-note {
+  padding: 6px 10px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
 .agent-tool-io {
   padding: 6px 10px;
   white-space: pre-wrap;
@@ -345,7 +374,6 @@
 
 .agent-tool-io.agent-tool-out {
   color: var(--text);
-  border-top: 1px dashed var(--border);
 }
 
 /* Pending approval card (write operation waiting for user). */

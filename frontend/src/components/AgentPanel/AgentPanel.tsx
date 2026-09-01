@@ -357,13 +357,30 @@ export default function AgentPanel({ onOpenSettings }: Props) {
                       {call.state === 'running' ? '●' : call.state === 'error' ? '✕' : '✓'}
                     </span>
                     <span className="agent-tool-name">{call.name}</span>
-                    {call.state === 'done' && <span className="agent-tool-ok">完成</span>}
+                    {call.state === 'running' ? (
+                      <span className="agent-block-live">进行中</span>
+                    ) : call.state === 'done' ? (
+                      <span className="agent-tool-ok">完成</span>
+                    ) : null}
                   </button>
                   {!block.collapsed && (
-                    <>
-                      {call.input && <pre className="agent-tool-io">{prettyJson(call.input)}</pre>}
-                      {call.output && <pre className="agent-tool-io agent-tool-out">{call.output}</pre>}
-                    </>
+                    <div className="agent-tool-content">
+                      {call.input && (
+                        <div className="agent-tool-part">
+                          <span className="agent-tool-part-label">输入</span>
+                          <pre className="agent-tool-io">{prettyJson(call.input)}</pre>
+                        </div>
+                      )}
+                      {call.output && (
+                        <div className="agent-tool-part">
+                          <span className="agent-tool-part-label">输出</span>
+                          <pre className="agent-tool-io agent-tool-out">{call.output}</pre>
+                        </div>
+                      )}
+                      {call.state === 'running' && (
+                        <span className="agent-tool-running-note">正在执行…</span>
+                      )}
+                    </div>
                   )}
                 </div>
               );
