@@ -24,6 +24,14 @@ const (
 	EventDone = "done"
 	// EventError reports a failure.
 	EventError = "error"
+	// EventSystem carries the injected system prompt (emitted once per agent
+	// build so the UI can show it as a collapsible block).
+	EventSystem = "system"
+	// EventThinking streams the model's deep-thinking/reasoning text.
+	EventThinking = "thinking"
+	// EventConfig notifies that the LLM configuration changed; listeners
+	// should re-check IsConfigured.
+	EventConfig = "config"
 )
 
 // AgentEvent is the wire payload for EventAgent. Only the fields relevant to

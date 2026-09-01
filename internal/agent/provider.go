@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/deepnoodle-ai/dive/llm"
-	"github.com/deepnoodle-ai/dive/providers/openaicompletions"
 	"github.com/deepnoodle-ai/dive/providers/ollama"
+	"github.com/deepnoodle-ai/dive/providers/openaicompletions"
 
 	"pwshdeck/internal/config"
 )

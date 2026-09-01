@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Events } from '@wailsio/runtime';
 import { AgentService } from '../../../bindings/pwshdeck/internal/agent';
+import AgentIcon from '../AgentIcon';
 import './AgentPanel.css';
 
 // Wire payload of the agent_event Wails event (mirrors internal/agent.AgentEvent).
@@ -34,10 +35,16 @@ type PendingApproval = {
   prompt: string;
 };
 
-type Entry =
+// Conversation is an ordered list of blocks in the order the AI actually
+// produced them: system prompt injection, deep thinking, tool calls, and
+// assistant text all appear as their own block. Except for assistant text,
+// every block defaults to collapsed.
+type Block =
   | { kind: 'user'; text: string }
-  | { kind: 'assistant'; text: string; streaming: boolean; toolCalls: ToolCall[] }
-  | { kind: 'system'; text: string }
+  | { kind: 'system'; text: string; collapsed: boolean }
+  | { kind: 'thinking'; text: string; streaming: boolean; collapsed: boolean }
+  | { kind: 'tool'; call: ToolCall; collapsed: boolean }
+  | { kind: 'assistant'; text: string; streaming: boolean }
   | { kind: 'error'; text: string };
 
 type Props = {
@@ -52,8 +59,14 @@ const prettyJson = (raw: string): string => {
   }
 };
 
+const blockLabel: Record<'system' | 'thinking' | 'tool', string> = {
+  system: '系统提示词注入',
+  thinking: '深度思考过程',
+  tool: '工具调用',
+};
+
 export default function AgentPanel({ onOpenSettings }: Props) {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]);
   const [status, setStatus] = useState<'idle' | 'running' | 'pending'>('idle');
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -63,22 +76,36 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
-  // Update the last assistant entry (creating one on demand), then run a
-  // callback so event handlers can append deltas / tool activity to it.
-  const patchLastAssistant = (
-    fn: (e: Extract<Entry, { kind: 'assistant' }>) => Extract<Entry, { kind: 'assistant' }>,
-  ) => {
-    setEntries((prev) => {
+  // Append a text delta to the trailing block when it is the same kind,
+  // otherwise start a new block. This keeps the conversation in the AI's
+  // actual output order (thinking, then text, then tool, then more text...).
+  const appendDelta = (kind: 'assistant' | 'thinking', text: string) => {
+    setBlocks((prev) => {
       const next = [...prev];
-      let i = next.length - 1;
-      while (i >= 0 && next[i].kind !== 'assistant') i -= 1;
-      if (i < 0) {
-        next.push(fn({ kind: 'assistant', text: '', streaming: true, toolCalls: [] }));
+      const last = next[next.length - 1];
+      if (last && last.kind === kind) {
+        next[next.length - 1] =
+          kind === 'assistant'
+            ? { ...(last as Extract<Block, { kind: 'assistant' }>), text: last.text + text }
+            : { ...(last as Extract<Block, { kind: 'thinking' }>), text: last.text + text };
       } else {
-        next[i] = fn(next[i] as Extract<Entry, { kind: 'assistant' }>);
+        next.push(
+          kind === 'assistant'
+            ? { kind, text, streaming: true }
+            : { kind, text, streaming: true, collapsed: true },
+        );
       }
       return next;
     });
+  };
+
+  const refreshConfig = async () => {
+    try {
+      const [ok] = await AgentService.IsConfigured();
+      setConfigured(ok);
+    } catch {
+      setConfigured(false);
+    }
   };
 
   useEffect(() => {
@@ -102,12 +129,24 @@ export default function AgentPanel({ onOpenSettings }: Props) {
       if (!ev || typeof ev.type !== 'string') return;
       switch (ev.type) {
         case 'status':
-          setStatus((ev.state === 'running' || ev.state === 'pending' ? ev.state : 'idle') as 'idle' | 'running' | 'pending');
+          setStatus(
+            (ev.state === 'running' || ev.state === 'pending' ? ev.state : 'idle') as
+              | 'idle'
+              | 'running'
+              | 'pending',
+          );
           if (ev.state === 'running' && pendingRef.current) setPending(null);
           break;
         case 'delta':
-          if (!ev.text) break;
-          patchLastAssistant((e) => ({ ...e, text: e.text + ev.text! }));
+          if (ev.text) appendDelta('assistant', ev.text);
+          break;
+        case 'thinking':
+          if (ev.text) appendDelta('thinking', ev.text);
+          break;
+        case 'system':
+          if (ev.text) {
+            setBlocks((prev) => [...prev, { kind: 'system', text: ev.text!, collapsed: true }]);
+          }
           break;
         case 'tool_call': {
           const call: ToolCall = {
@@ -117,16 +156,17 @@ export default function AgentPanel({ onOpenSettings }: Props) {
             output: '',
             state: 'running',
           };
-          patchLastAssistant((e) => ({ ...e, toolCalls: [...e.toolCalls, call] }));
+          setBlocks((prev) => [...prev, { kind: 'tool', call, collapsed: true }]);
           break;
         }
         case 'tool_result':
-          patchLastAssistant((e) => ({
-            ...e,
-            toolCalls: e.toolCalls.map((c) =>
-              c.id === ev.call_id ? { ...c, output: ev.output ?? '', state: 'done' } : c,
+          setBlocks((prev) =>
+            prev.map((b) =>
+              b.kind === 'tool' && b.call.id === ev.call_id
+                ? { ...b, call: { ...b.call, output: ev.output ?? '', state: 'done' } }
+                : b,
             ),
-          }));
+          );
           break;
         case 'pending':
           setPending({
@@ -140,11 +180,29 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           setStatus('pending');
           break;
         case 'done':
-          patchLastAssistant((e) => ({ ...e, text: ev.text ?? e.text, streaming: false }));
+          setBlocks((prev) => {
+            const next = prev.map((b) =>
+              b.kind === 'assistant' || b.kind === 'thinking' ? { ...b, streaming: false } : b,
+            );
+            // Final text is authoritative: replace the last assistant block's
+            // accumulated stream with it (keeps tools/thinking blocks intact).
+            if (ev.text) {
+              for (let i = next.length - 1; i >= 0; i--) {
+                if (next[i].kind === 'assistant') {
+                  next[i] = { ...(next[i] as Extract<Block, { kind: 'assistant' }>), text: ev.text! };
+                  break;
+                }
+              }
+            }
+            return next;
+          });
           break;
         case 'error':
-          setEntries((prev) => [...prev, { kind: 'error', text: ev.text || '未知错误' }]);
+          setBlocks((prev) => [...prev, { kind: 'error', text: ev.text || '未知错误' }]);
           setStatus('idle');
+          break;
+        case 'config':
+          refreshConfig();
           break;
         default:
           break;
@@ -157,7 +215,7 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [entries, status, pending]);
+  }, [blocks, status, pending]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -165,15 +223,24 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
 
+  const toggleBlock = (idx: number) => {
+    setBlocks((prev) =>
+      prev.map((b, i) => {
+        if (i !== idx || (b.kind !== 'system' && b.kind !== 'thinking' && b.kind !== 'tool')) return b;
+        return { ...b, collapsed: !b.collapsed };
+      }),
+    );
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text || status !== 'idle' || configured === false) return;
-    setEntries((prev) => [...prev, { kind: 'user', text }]);
+    setBlocks((prev) => [...prev, { kind: 'user', text }]);
     setInput('');
     try {
       await AgentService.SendMessage(text);
     } catch (e) {
-      setEntries((prev) => [...prev, { kind: 'error', text: String(e) }]);
+      setBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
       setStatus('idle');
     }
   };
@@ -182,14 +249,14 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     if (!pending) return;
     const p = pending;
     setPending(null);
-    setEntries((prev) => [
+    setBlocks((prev) => [
       ...prev,
-      { kind: 'system', text: approved ? `已批准执行：${p.command}` : `已拒绝：${p.command}` },
+      { kind: 'user', text: approved ? `（已批准执行：${p.command}）` : `（已拒绝：${p.command}）` },
     ]);
     try {
       await AgentService.Approve(p.callId, approved);
     } catch (e) {
-      setEntries((prev) => [...prev, { kind: 'error', text: String(e) }]);
+      setBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
       setStatus('idle');
     }
   };
@@ -205,7 +272,9 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   if (configured === false) {
     return (
       <div className="agent-panel agent-empty">
-        <div className="agent-empty-icon">🤖</div>
+        <div className="agent-empty-icon">
+          <AgentIcon size={44} />
+        </div>
         <h3>AI 助手尚未配置</h3>
         <p>请在设置中填写模型服务信息（支持 OpenAI 兼容接口，如 DeepSeek / Ollama）。</p>
         <button type="button" className="agent-primary" onClick={onOpenSettings}>
@@ -222,7 +291,9 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     <div className="agent-panel">
       <div className="agent-head">
         <div className="agent-head-title">
-          <span className="agent-logo">🤖</span>
+          <span className="agent-logo">
+            <AgentIcon size={15} />
+          </span>
           <span>AI 助手</span>
           <span className={`agent-status ${status}`}>
             <span className="agent-status-dot" />
@@ -237,58 +308,73 @@ export default function AgentPanel({ onOpenSettings }: Props) {
       </div>
 
       <div className="agent-scroll" ref={scrollRef} onScroll={onScroll}>
-        {entries.length === 0 && (
+        {blocks.length === 0 && (
           <div className="agent-welcome">
             <p>我是 PwshDeck 内置的 AI 助手，可以直接操作你的终端会话。</p>
-            <p>例如：<em>“帮我看看为什么 node 命令找不到”</em>、<em>“检查 8080 端口被谁占用”</em>、<em>“装一下 Python 依赖”</em>。</p>
+            <p>
+              例如：<em>“帮我看看为什么 node 命令找不到”</em>、
+              <em>“检查 8080 端口被谁占用”</em>、<em>“装一下 Python 依赖”</em>。
+            </p>
             <p>只读命令会自动执行；修改系统的命令会先征求你的批准。</p>
           </div>
         )}
-        {entries.map((entry, idx) => {
-          if (entry.kind === 'user') {
-            return (
-              <div key={idx} className="agent-msg agent-user">
-                <div className="agent-bubble">{entry.text}</div>
-              </div>
-            );
-          }
-          if (entry.kind === 'system') {
-            return (
-              <div key={idx} className="agent-msg agent-system">
-                {entry.text}
-              </div>
-            );
-          }
-          if (entry.kind === 'error') {
-            return (
-              <div key={idx} className="agent-msg agent-error">
-                ⚠ {entry.text}
-              </div>
-            );
-          }
-          return (
-            <div key={idx} className="agent-msg agent-assistant">
-              <div className={`agent-bubble ${entry.streaming ? 'streaming' : ''}`}>
-                {entry.text || (entry.streaming ? '' : '…')}
-              </div>
-              {entry.toolCalls.length > 0 && (
-                <div className="agent-tools">
-                  {entry.toolCalls.map((call) => (
-                    <div key={call.id} className="agent-tool">
-                      <div className="agent-tool-head">
-                        <span className={`agent-tool-state ${call.state}`}>
-                          {call.state === 'running' ? '●' : '✓'}
-                        </span>
-                        <code>{call.name}</code>
-                      </div>
+        {blocks.map((block, idx) => {
+          switch (block.kind) {
+            case 'user':
+              return (
+                <div key={idx} className="agent-msg agent-user">
+                  <div className="agent-bubble">{block.text}</div>
+                </div>
+              );
+            case 'assistant':
+              return (
+                <div key={idx} className="agent-msg agent-assistant">
+                  <div className={`agent-bubble ${block.streaming ? 'streaming' : ''}`}>
+                    {block.text || (block.streaming ? '' : '…')}
+                  </div>
+                </div>
+              );
+            case 'system':
+            case 'thinking':
+              return (
+                <div key={idx} className={`agent-block agent-block-${block.kind}`}>
+                  <button type="button" className="agent-block-head" onClick={() => toggleBlock(idx)}>
+                    <span className={`agent-chevron ${block.collapsed ? '' : 'open'}`}>▸</span>
+                    <span className={`agent-block-dot ${'streaming' in block && block.streaming ? 'running' : 'done'}`} />
+                    <span className="agent-block-label">{blockLabel[block.kind]}</span>
+                    {'streaming' in block && block.streaming && <span className="agent-block-live">进行中</span>}
+                  </button>
+                  {!block.collapsed && <pre className="agent-block-body">{block.text}</pre>}
+                </div>
+              );
+            case 'tool': {
+              const call = block.call;
+              return (
+                <div key={idx} className="agent-block agent-block-tool">
+                  <button type="button" className="agent-block-head" onClick={() => toggleBlock(idx)}>
+                    <span className={`agent-chevron ${block.collapsed ? '' : 'open'}`}>▸</span>
+                    <span className={`agent-tool-state ${call.state}`}>
+                      {call.state === 'running' ? '●' : call.state === 'error' ? '✕' : '✓'}
+                    </span>
+                    <span className="agent-tool-name">{call.name}</span>
+                    {call.state === 'done' && <span className="agent-tool-ok">完成</span>}
+                  </button>
+                  {!block.collapsed && (
+                    <>
                       {call.input && <pre className="agent-tool-io">{prettyJson(call.input)}</pre>}
                       {call.output && <pre className="agent-tool-io agent-tool-out">{call.output}</pre>}
-                    </div>
-                  ))}
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
-          );
+              );
+            }
+            case 'error':
+              return (
+                <div key={idx} className="agent-msg agent-error">
+                  ⚠ {block.text}
+                </div>
+              );
+          }
         })}
         {pending && (
           <div className="agent-pending">

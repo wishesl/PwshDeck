@@ -29,7 +29,10 @@
 }
 
 .agent-logo {
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
 }
 
 .agent-status {
@@ -107,7 +110,11 @@
 }
 
 .agent-empty-icon {
-  font-size: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  opacity: 0.9;
 }
 
 .agent-empty h3 {
@@ -205,15 +212,10 @@
   border: 1px solid rgba(247, 118, 142, 0.4);
 }
 
-/* Tool call cards rendered under an assistant bubble. */
-.agent-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Collapsible info blocks: system prompt injection, deep thinking, tools.
+   Everything except assistant text is collapsed by default. */
+.agent-block {
   width: 88%;
-}
-
-.agent-tool {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: rgba(14, 17, 27, 0.6);
@@ -221,22 +223,88 @@
   font-size: 12px;
 }
 
-.agent-tool-head {
+.agent-block-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
   border-bottom: 1px solid var(--border);
+  background: transparent;
   color: var(--text);
-  font-family: var(--font-mono, monospace);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
 }
 
-.agent-tool-state {
+.agent-block-head:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.agent-chevron {
+  flex: none;
+  width: 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.agent-chevron.open {
+  transform: rotate(90deg);
+}
+
+.agent-block-dot {
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  flex: none;
   background: var(--text-muted);
+}
+
+.agent-block-dot.running {
+  background: var(--accent);
+  box-shadow: 0 0 5px var(--accent);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-block-dot.done {
+  background: var(--success);
+}
+
+.agent-block-label {
+  flex: 1;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.agent-block-live {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.agent-block-body {
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* Tool block specifics. */
+.agent-tool-state {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  text-align: center;
+  line-height: 8px;
 }
 
 .agent-tool-state.running {
@@ -249,9 +317,20 @@
   background: var(--success);
 }
 
+.agent-tool-state.error {
+  background: var(--danger);
+}
+
 .agent-tool-name {
+  flex: 1;
   color: var(--accent);
   font-weight: 600;
+  font-family: var(--font-mono, monospace);
+}
+
+.agent-tool-ok {
+  color: var(--success);
+  font-size: 11px;
 }
 
 .agent-tool-io {
@@ -264,11 +343,8 @@
   overflow-y: auto;
 }
 
-.agent-tool-io .agent-tool-out {
+.agent-tool-io.agent-tool-out {
   color: var(--text);
-}
-
-.agent-tool-io + .agent-tool-io {
   border-top: 1px dashed var(--border);
 }
 

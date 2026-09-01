@@ -9,6 +9,7 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
+import AgentIcon from './components/AgentIcon';
 import AgentPanel from './components/AgentPanel';
 import AgentSettings from './components/AgentSettings/AgentSettings';
 import McpPanel from './components/McpPanel';
@@ -646,7 +647,9 @@ export default function App() {
           ＋ 新建会话
         </button>
         <button type="button" className="agent-btn" title="AI 助手" onClick={openAgentPanel}>
-          <span className="agent-btn-logo">🤖</span>
+          <span className="agent-btn-logo">
+            <AgentIcon size={13} />
+          </span>
           AI 助手
         </button>
         <button type="button" className="settings-btn" title="设置" onClick={() => setSettingsOpen(true)}>

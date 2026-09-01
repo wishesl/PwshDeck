@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/deepnoodle-ai/dive"
+	"github.com/deepnoodle-ai/dive/llm"
 	divesess "github.com/deepnoodle-ai/dive/session"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -24,12 +25,13 @@ type AgentService struct {
 	pwsh *session.SessionManager
 	cfg  config.LLMConfig
 
-	mu      sync.Mutex
-	agent   *dive.Agent          // nil until configured
-	sess    *divesess.Session    // conversation memory
-	busy    bool                 // a turn is in flight
-	pending *dive.SuspensionState // awaiting approval
-	cancel  context.CancelFunc
+	mu       sync.Mutex
+	agent    *dive.Agent           // nil until configured
+	sess     *divesess.Session     // conversation memory
+	busy     bool                  // a turn is in flight
+	pending  *dive.SuspensionState // awaiting approval
+	sysShown bool                  // system prompt already streamed for this agent
+	cancel   context.CancelFunc
 }
 
 // NewAgentService constructs the service. Configure with SetLLMConfig before
@@ -72,6 +74,7 @@ func (a *AgentService) SetLLMConfig(cfg config.LLMConfig) error {
 	if err := c.Save(); err != nil {
 		log.Printf("agent: failed to persist LLM config: %v", err)
 	}
+	a.emit(AgentEvent{Type: EventConfig})
 	return nil
 }
 
@@ -82,18 +85,19 @@ func (a *AgentService) rebuildLocked() error {
 		return err
 	}
 	ag, err := dive.NewAgent(dive.AgentOptions{
-		Name:            "PwshDeck Agent",
-		Description:     "Terminal environment troubleshooting assistant",
-		SystemPrompt:    SystemPrompt,
-		Model:           model,
-		Tools:           a.tools(),
-		Session:         a.sess,
+		Name:               "PwshDeck Agent",
+		Description:        "Terminal environment troubleshooting assistant",
+		SystemPrompt:       SystemPrompt,
+		Model:              model,
+		Tools:              a.tools(),
+		Session:            a.sess,
 		ToolIterationLimit: 25,
 	})
 	if err != nil {
 		return err
 	}
 	a.agent = ag
+	a.sysShown = false
 	return nil
 }
 
@@ -142,6 +146,7 @@ func (a *AgentService) SendMessage(input string) error {
 	a.emit(AgentEvent{Type: EventStatus, State: "running"})
 	go func() {
 		defer a.finishRun()
+		a.emitSystemPromptOnce()
 		resp, err := agent.CreateResponse(ctx,
 			dive.WithInput(input),
 			dive.WithEventCallback(a.eventCallback),
@@ -149,6 +154,19 @@ func (a *AgentService) SendMessage(input string) error {
 		a.handleResult(resp, err)
 	}()
 	return nil
+}
+
+// emitSystemPromptOnce streams the system prompt as a collapsible block the
+// first time a turn runs for the current agent build.
+func (a *AgentService) emitSystemPromptOnce() {
+	a.mu.Lock()
+	if a.sysShown {
+		a.mu.Unlock()
+		return
+	}
+	a.sysShown = true
+	a.mu.Unlock()
+	a.emit(AgentEvent{Type: EventSystem, Text: SystemPrompt})
 }
 
 // Approve resolves a pending approval request. approved=true runs the pending
@@ -271,8 +289,20 @@ func (a *AgentService) eventCallback(ctx context.Context, item *dive.ResponseIte
 	}
 	switch item.Type {
 	case dive.ResponseItemTypeModelEvent:
-		if item.Event != nil && item.Event.Delta != nil && item.Event.Delta.Text != "" {
-			a.emit(AgentEvent{Type: EventDelta, Text: item.Event.Delta.Text})
+		if item.Event == nil || item.Event.Delta == nil {
+			return nil
+		}
+		switch item.Event.Delta.Type {
+		case llm.EventDeltaTypeThinking:
+			// Reasoning content (e.g. DeepSeek reasoner / thinking models)
+			// streams as a separate collapsible "deep thinking" block.
+			if item.Event.Delta.Thinking != "" {
+				a.emit(AgentEvent{Type: EventThinking, Text: item.Event.Delta.Thinking})
+			}
+		default:
+			if item.Event.Delta.Text != "" {
+				a.emit(AgentEvent{Type: EventDelta, Text: item.Event.Delta.Text})
+			}
 		}
 	case dive.ResponseItemTypeToolCall:
 		if item.ToolCall != nil {
