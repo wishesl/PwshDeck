@@ -5,7 +5,8 @@
  * AgentService runs the built-in AI assistant. It owns one Dive agent bound
  * to the SessionManager (so the agent's tools operate real terminal sessions)
  * and streams progress to every window through the agent_event Wails event.
- * Only one turn runs at a time; write commands pause for user approval.
+ * Only one turn runs at a time; write commands pause for user approval unless
+ * full-permission mode (autoApprove) is enabled.
  * @module
  */
 
@@ -42,6 +43,14 @@ export function GetLLMConfig(): $CancellablePromise<config$0.LLMConfig> {
 }
 
 /**
+ * IsAutoApprove reports whether full-permission mode is on: modifying
+ * commands, raw input and session stops run without asking for approval.
+ */
+export function IsAutoApprove(): $CancellablePromise<boolean> {
+    return $Call.ByID(1767888156);
+}
+
+/**
  * IsConfigured reports whether a model has been configured, plus a human
  * explanation of the state.
  */
@@ -66,6 +75,14 @@ export function LogFrontend(msg: string): $CancellablePromise<void> {
  */
 export function SendMessage(input: string): $CancellablePromise<void> {
     return $Call.ByID(2587051541, input);
+}
+
+/**
+ * SetAutoApprove toggles full-permission mode and persists the choice. It
+ * emits a config event so every window's UI reflects the new state.
+ */
+export function SetAutoApprove(enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2439028692, enabled);
 }
 
 /**

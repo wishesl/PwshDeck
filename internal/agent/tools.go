@@ -46,6 +46,14 @@ func (a *AgentService) tools() []dive.Tool {
 	}
 }
 
+// autoApproved reports whether full-permission mode is on (write operations
+// run without waiting for user approval). Safe to call from tool handlers.
+func (a *AgentService) autoApproved() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoApprove
+}
+
 // pickSession resolves a session id, preferring the explicit one; an empty id
 // picks the first running session so the agent does not need to know ids when
 // a shell already exists.
@@ -116,29 +124,20 @@ type executeIn struct {
 func (a *AgentService) toolExecuteCommand() dive.Tool {
 	return dive.FuncTool[executeIn](
 		"execute_command",
-		"Run a command in an interactive terminal session and wait for the shell to return to its prompt. Read-only commands (Get-*, ls, git status, version checks, ...) run automatically; commands that modify the system (install, remove, write files, kill processes, ...) pause for user approval. Returns the cleaned output.",
+		"Run a command in an interactive terminal session and wait for the shell to return to its prompt. Read-only commands (Get-*, ls, git status, version checks, ...) run automatically; commands that modify the system (install, remove, write files, kill processes, ...) pause for user approval unless the user enabled full-permission mode. Returns the cleaned output.",
 		func(ctx context.Context, in executeIn) (*dive.ToolResult, error) {
 			sess, err := a.pickSession(in.SessionID)
 			if err != nil {
 				return dive.NewToolResultError(err.Error()), nil
 			}
-			if !isReadOnlyCommand(in.Command) {
+			if !isReadOnlyCommand(in.Command) && !a.autoApproved() {
 				return dive.NewSuspendResultWithReason(
 					fmt.Sprintf("需要审批：执行命令 %q", in.Command),
 					dive.SuspendReasonAuth,
 					map[string]any{"command": in.Command, "session_id": sess.ID},
 				), nil
 			}
-			output, timedOut, err := a.pwsh.ExecuteCommand(sess.ID, in.Command, 0)
-			if err != nil {
-				return dive.NewToolResultError(err.Error()), nil
-			}
-			cleaned := cleanOutput(output)
-			cleaned = stripCommandEcho(cleaned, in.Command)
-			if timedOut {
-				cleaned += "\n[command timed out]"
-			}
-			return dive.NewToolResultText(tailOutput(cleaned, maxToolOutput)), nil
+			return a.runCommand(sess.ID, in.Command), nil
 		})
 }
 
@@ -181,17 +180,20 @@ type sendInputIn struct {
 func (a *AgentService) toolSendInput() dive.Tool {
 	return dive.FuncTool[sendInputIn](
 		"send_input",
-		"Write raw keystrokes to a session's stdin (for nested REPLs like python/node/erl where execute_command would time out). Requires approval.",
+		"Write raw keystrokes to a session's stdin (for nested REPLs like python/node/erl where execute_command would time out). Pauses for user approval unless the user enabled full-permission mode.",
 		func(ctx context.Context, in sendInputIn) (*dive.ToolResult, error) {
 			sess, err := a.pickSession(in.SessionID)
 			if err != nil {
 				return dive.NewToolResultError(err.Error()), nil
 			}
-			return dive.NewSuspendResultWithReason(
-				fmt.Sprintf("需要审批：向会话 %s 发送输入 %q", sess.ID, in.Input),
-				dive.SuspendReasonAuth,
-				map[string]any{"session_id": sess.ID},
-			), nil
+			if !a.autoApproved() {
+				return dive.NewSuspendResultWithReason(
+					fmt.Sprintf("需要审批：向会话 %s 发送输入 %q", sess.ID, in.Input),
+					dive.SuspendReasonAuth,
+					map[string]any{"session_id": sess.ID},
+				), nil
+			}
+			return a.runSendInput(sess.ID, in.Input), nil
 		})
 }
 
@@ -204,17 +206,56 @@ type stopSessionIn struct {
 func (a *AgentService) toolStopSession() dive.Tool {
 	return dive.FuncTool[stopSessionIn](
 		"stop_session",
-		"Terminate a terminal session and its shell. Requires approval.",
+		"Terminate a terminal session and its shell. Pauses for user approval unless the user enabled full-permission mode.",
 		func(ctx context.Context, in stopSessionIn) (*dive.ToolResult, error) {
 			if _, err := a.pickSession(in.SessionID); err != nil {
 				return dive.NewToolResultError(err.Error()), nil
 			}
-			return dive.NewSuspendResultWithReason(
-				fmt.Sprintf("需要审批：终止会话 %s", in.SessionID),
-				dive.SuspendReasonAuth,
-				map[string]any{"session_id": in.SessionID},
-			), nil
+			if !a.autoApproved() {
+				return dive.NewSuspendResultWithReason(
+					fmt.Sprintf("需要审批：终止会话 %s", in.SessionID),
+					dive.SuspendReasonAuth,
+					map[string]any{"session_id": in.SessionID},
+				), nil
+			}
+			return a.runStopSession(in.SessionID), nil
 		})
+}
+
+// ---- write-action execution ---------------------------------------------
+
+// runCommand executes a shell command in a session and returns the cleaned
+// output as a tool result. Shared by the direct path (read-only command or
+// full-permission mode) and the approval-resume path.
+func (a *AgentService) runCommand(sessionID, command string) *dive.ToolResult {
+	output, timedOut, err := a.pwsh.ExecuteCommand(sessionID, command, 0)
+	if err != nil {
+		return dive.NewToolResultError(err.Error())
+	}
+	cleaned := cleanOutput(output)
+	cleaned = stripCommandEcho(cleaned, command)
+	if timedOut {
+		cleaned += "\n[command timed out]"
+	}
+	return dive.NewToolResultText(tailOutput(cleaned, maxToolOutput))
+}
+
+// runSendInput writes raw keystrokes to a session's stdin. Shared by the
+// direct path (full-permission mode) and the approval-resume path.
+func (a *AgentService) runSendInput(sessionID, rawInput string) *dive.ToolResult {
+	if err := a.pwsh.WriteInput(sessionID, decodeInput(rawInput)); err != nil {
+		return dive.NewToolResultError(err.Error())
+	}
+	return dive.NewToolResultText("input sent — use read_output to see the result")
+}
+
+// runStopSession terminates a session and its shell. Shared by the direct
+// path (full-permission mode) and the approval-resume path.
+func (a *AgentService) runStopSession(sessionID string) *dive.ToolResult {
+	if err := a.pwsh.StopSession(sessionID); err != nil {
+		return dive.NewToolResultError(err.Error())
+	}
+	return dive.NewToolResultText(fmt.Sprintf("session %s stopped", sessionID))
 }
 
 // ---- approval resolution ------------------------------------------------
@@ -235,16 +276,7 @@ func (a *AgentService) resolveApproval(ctx context.Context, state *dive.Suspensi
 		if !approved {
 			return dive.NewToolResultText(fmt.Sprintf("用户拒绝了执行命令：%q", in.Command))
 		}
-		output, timedOut, err := a.pwsh.ExecuteCommand(in.SessionID, in.Command, 0)
-		if err != nil {
-			return dive.NewToolResultError(err.Error())
-		}
-		cleaned := cleanOutput(output)
-		cleaned = stripCommandEcho(cleaned, in.Command)
-		if timedOut {
-			cleaned += "\n[command timed out]"
-		}
-		return dive.NewToolResultText(tailOutput(cleaned, maxToolOutput))
+		return a.runCommand(in.SessionID, in.Command)
 
 	case "send_input":
 		var in sendInputIn
@@ -254,10 +286,7 @@ func (a *AgentService) resolveApproval(ctx context.Context, state *dive.Suspensi
 		if !approved {
 			return dive.NewToolResultText("用户拒绝了发送输入")
 		}
-		if err := a.pwsh.WriteInput(in.SessionID, decodeInput(in.Input)); err != nil {
-			return dive.NewToolResultError(err.Error())
-		}
-		return dive.NewToolResultText("input sent — use read_output to see the result")
+		return a.runSendInput(in.SessionID, in.Input)
 
 	case "stop_session":
 		var in stopSessionIn
@@ -267,10 +296,7 @@ func (a *AgentService) resolveApproval(ctx context.Context, state *dive.Suspensi
 		if !approved {
 			return dive.NewToolResultText(fmt.Sprintf("用户拒绝了终止会话 %s", in.SessionID))
 		}
-		if err := a.pwsh.StopSession(in.SessionID); err != nil {
-			return dive.NewToolResultError(err.Error())
-		}
-		return dive.NewToolResultText(fmt.Sprintf("session %s stopped", in.SessionID))
+		return a.runStopSession(in.SessionID)
 	}
 	return dive.NewToolResultText(fmt.Sprintf("unknown tool %q — operation cancelled", call.Name))
 }

@@ -18,6 +18,7 @@ export default function AgentSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(false);
 
   const refresh = async () => {
     try {
@@ -31,6 +32,7 @@ export default function AgentSettings() {
         model: c.model || '',
         api_key: c.api_key || '',
       });
+      setAutoApprove(await AgentService.IsAutoApprove());
     } catch (e) {
       setError(String(e));
     }
@@ -62,6 +64,17 @@ export default function AgentSettings() {
     }
   };
 
+  const toggleAutoApprove = async () => {
+    const next = !autoApprove;
+    setAutoApprove(next);
+    try {
+      await AgentService.SetAutoApprove(next);
+    } catch (e) {
+      setAutoApprove(!next);
+      setError(String(e));
+    }
+  };
+
   return (
     <div className="agent-settings">
       <section className="card">
@@ -70,8 +83,15 @@ export default function AgentSettings() {
           <span className={`pill ${configured ? 'on' : 'off'}`}>{configured ? '● 已配置' : '○ 未配置'}</span>
         </div>
         <p className="hint">
-          内置 AI 助手可直接操控本应用的 pwsh 终端会话，帮助排查环境问题；写操作需你逐条审批后才执行。
+          内置 AI 助手可直接操控本应用的 pwsh 终端会话，帮助排查环境问题；默认写操作需你逐条审批后才执行。
         </p>
+        <label className="agent-settings-perm">
+          <input type="checkbox" checked={autoApprove} onChange={toggleAutoApprove} />
+          <span>
+            <strong>完全权限模式</strong> — 写命令、发送输入、停止会话免审批直接执行
+            {autoApprove && <em className="agent-settings-perm-on">（已开启，注意风险）</em>}
+          </span>
+        </label>
         {statusText && <p className="agent-settings-status">{statusText}</p>}
         {error && <p className="error-msg">⚠ {error}</p>}
         <div className="agent-settings-grid">

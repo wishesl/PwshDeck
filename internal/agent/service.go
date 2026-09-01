@@ -19,19 +19,21 @@ import (
 // AgentService runs the built-in AI assistant. It owns one Dive agent bound
 // to the SessionManager (so the agent's tools operate real terminal sessions)
 // and streams progress to every window through the agent_event Wails event.
-// Only one turn runs at a time; write commands pause for user approval.
+// Only one turn runs at a time; write commands pause for user approval unless
+// full-permission mode (autoApprove) is enabled.
 type AgentService struct {
 	app  *application.App
 	pwsh *session.SessionManager
 	cfg  config.LLMConfig
 
-	mu       sync.Mutex
-	agent    *dive.Agent           // nil until configured
-	sess     *divesess.Session     // conversation memory
-	busy     bool                  // a turn is in flight
-	pending  *dive.SuspensionState // awaiting approval
-	sysShown bool                  // system prompt already streamed for this agent
-	cancel   context.CancelFunc
+	mu          sync.Mutex
+	agent       *dive.Agent           // nil until configured
+	sess        *divesess.Session     // conversation memory
+	busy        bool                  // a turn is in flight
+	pending     *dive.SuspensionState // awaiting approval
+	sysShown    bool                  // system prompt already streamed for this agent
+	autoApprove bool                  // full-permission mode: skip approval suspensions
+	cancel      context.CancelFunc
 }
 
 // NewAgentService constructs the service. Configure with SetLLMConfig before
@@ -49,6 +51,7 @@ func NewAgentService(cfg config.LLMConfig) *AgentService {
 func (a *AgentService) Init(app *application.App, pwsh *session.SessionManager) {
 	a.app = app
 	a.pwsh = pwsh
+	a.autoApprove = config.Load().AgentAutoApprove
 	if a.cfg.Model != "" {
 		a.rebuildLocked()
 	}
@@ -121,6 +124,30 @@ func (a *AgentService) IsConfigured() (bool, string) {
 		return false, "未配置模型 — 请在设置中填写 LLM 配置"
 	}
 	return true, fmt.Sprintf("%s (%s)", a.cfg.Model, a.cfg.Provider)
+}
+
+// IsAutoApprove reports whether full-permission mode is on: modifying
+// commands, raw input and session stops run without asking for approval.
+func (a *AgentService) IsAutoApprove() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoApprove
+}
+
+// SetAutoApprove toggles full-permission mode and persists the choice. It
+// emits a config event so every window's UI reflects the new state.
+func (a *AgentService) SetAutoApprove(enabled bool) error {
+	a.mu.Lock()
+	a.autoApprove = enabled
+	a.mu.Unlock()
+	c := config.Load()
+	c.AgentAutoApprove = enabled
+	if err := c.Save(); err != nil {
+		log.Printf("agent: failed to persist agent_auto_approve: %v", err)
+	}
+	agentLogf("SetAutoApprove: %v", enabled)
+	a.emit(AgentEvent{Type: EventConfig})
+	return nil
 }
 
 // SendMessage feeds a user message to the agent and returns immediately; the

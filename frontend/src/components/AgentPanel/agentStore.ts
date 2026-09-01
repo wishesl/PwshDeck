@@ -32,6 +32,8 @@ export type AgentState = {
   pending: PendingApproval | null;
   status: Status;
   configured: boolean | null;
+  // Full-permission mode: write operations skip the approval card.
+  autoApprove: boolean;
 };
 
 // Module-level store: the conversation lives outside the component so a dockview
@@ -41,6 +43,7 @@ let state: AgentState = {
   pending: null,
   status: 'idle',
   configured: null,
+  autoApprove: false,
 };
 
 const listeners = new Set<() => void>();
@@ -81,5 +84,10 @@ export function setStatus(status: Status) {
 
 export function setConfigured(configured: boolean) {
   state = { ...state, configured };
+  notify();
+}
+
+export function setAutoApprove(autoApprove: boolean) {
+  state = { ...state, autoApprove };
   notify();
 }

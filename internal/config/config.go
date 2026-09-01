@@ -80,6 +80,10 @@ type Config struct {
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
 	// LLM configures the built-in AI agent's model provider.
 	LLM LLMConfig `json:"llm"`
+	// AgentAutoApprove enables the built-in AI agent's full-permission mode:
+	// modifying commands, raw input and session stops run without asking the
+	// user for approval. Off by default — it is an explicit trust decision.
+	AgentAutoApprove bool `json:"agent_auto_approve"`
 	// Tabs holds the terminal tab layout (title + accent color per tab).
 	Tabs []TabPref `json:"tabs"`
 	// Layout is the serialized dockview split layout (JSON from api.toJSON()).
