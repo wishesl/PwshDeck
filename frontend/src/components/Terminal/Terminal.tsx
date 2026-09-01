@@ -75,9 +75,8 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
       theme: themeFor(accentRef.current),
       scrollback: 10000,
-      // ConPTY reprints wrapped lines differently from a generic VT host.
-      // The build number is completed after StartSession returns.
-      windowsPty: { backend: 'conpty' },
+      // xterm.js's windowsPty option is set after StartSession returns, when
+      // we know the actual Windows build number (see below).
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -271,7 +270,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     })().catch((err) => {
       if (disposed) return;
       setPhase('error');
-      enqueueOutput(`\r\n\x1b[31m启动 pwsh 失败: ${err}\x1b[0m\r\n`);
+      enqueueOutput(`\r\n\x1b[31m启动 shell 失败: ${err}\x1b[0m\r\n`);
     });
 
     // Keystrokes -> shell stdin. Preserve the raw xterm.js data, including
@@ -292,7 +291,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       const payload = event?.data;
       if (payload && sessionIdRef.current && payload.id === sessionIdRef.current) {
         if (payload.data === 'disconnected') {
-          enqueueOutput('\r\n\x1b[90m[pwsh 会话已结束]\x1b[0m\r\n');
+          enqueueOutput('\r\n\x1b[90m[会话已结束]\x1b[0m\r\n');
           setPhase('ended');
         }
       }
@@ -358,7 +357,7 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     <div className="terminal-host" style={{ '--tab-accent': accent } as CSSProperties}>
       {phase !== 'connected' && (
         <div className={`terminal-badge terminal-badge-${phase}`}>
-          {phase === 'starting' && '正在启动 pwsh…'}
+          {phase === 'starting' && '正在启动 shell…'}
           {phase === 'ended' && '会话已结束 — 关闭标签页或新建终端'}
           {phase === 'error' && '启动失败'}
         </div>

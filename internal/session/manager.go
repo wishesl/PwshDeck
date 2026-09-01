@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -10,9 +9,7 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"unicode/utf16"
 
-	"github.com/UserExistsError/conpty"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -51,10 +48,11 @@ type termEvent struct {
 	Data string `json:"data,omitempty"`
 }
 
-// SessionManager manages a set of interactive pwsh sessions, each running inside
-// its own Windows ConPTY, so shells behave exactly like a real terminal
-// (Tab completion, PSReadLine, progress bars, Ctrl+C, ...). Every window owns
-// one session, and MCP clients can create and drive additional sessions.
+// SessionManager manages a set of interactive shell sessions, each running
+// inside its own pseudo-terminal (ConPTY on Windows, a Unix pty elsewhere), so
+// shells behave exactly like a real terminal (Tab completion, line editing,
+// progress bars, Ctrl+C, ...). Every window owns one session, and MCP clients
+// can create and drive additional sessions.
 type SessionManager struct {
 	app *application.App
 
@@ -124,7 +122,8 @@ func (s *SessionManager) idleJanitor() {
 	}
 }
 
-// StartSession launches a new pwsh inside a ConPTY and registers it.
+// StartSession launches a new shell inside a pty and registers it. The shell
+// is pwsh on Windows and bash on Unix (see startShellPTY).
 // windowName associates the session with a GUI window so it can be cleaned up
 // when that window closes (may be empty for MCP-only sessions). workDir sets
 // the shell's initial working directory ("" = the user's home directory; a
@@ -148,29 +147,24 @@ func (s *SessionManager) StartSession(windowName, workDir string) (*SessionInfo,
 		}
 		id = newSessionID() // collision (astronomically unlikely): retry
 	}
-	title := fmt.Sprintf("pwsh #%d", n)
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "." // fall back to the current working directory
 	}
 	dir := resolveWorkDir(workDir, home)
-	cpty, err := conpty.Start(
-		pwshCommandLine(),
-		conpty.ConPtyDimensions(120, 30),
-		conpty.ConPtyWorkDir(dir),
-	)
+	sp, err := startShellPTY(dir, 120, 30)
 	if err != nil {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("failed to start pwsh in ConPTY: %w", err)
+		return nil, fmt.Errorf("failed to start shell in pty: %w", err)
 	}
+	title := fmt.Sprintf("%s #%d", sp.name, n)
 
 	sess := &TerminalSession{
 		ID:         id,
 		Title:      title,
 		Window:     windowName,
 		Pwd:        dir,
-		cpty:       cpty,
+		p:          sp.p,
 		cols:       120,
 		rows:       30,
 		createdAt:  time.Now(),
@@ -180,7 +174,7 @@ func (s *SessionManager) StartSession(windowName, workDir string) (*SessionInfo,
 	s.sessions[id] = sess
 	s.mu.Unlock()
 
-	// Stream raw ConPTY output to the frontend in chunks.
+	// Stream raw pty output to the frontend in chunks.
 	go s.readLoop(sess)
 	// Watch for the shell exiting.
 	go s.waitExit(sess)
@@ -189,39 +183,6 @@ func (s *SessionManager) StartSession(windowName, workDir string) (*SessionInfo,
 	info := sess.Info()
 	log.Printf("session %s started (%s)", id, windowName)
 	return &info, nil
-}
-
-// promptHookScript redefines the interactive prompt so every prompt emits an
-// invisible ConEmu-style OSC 9;9 cwd report (`ESC ] 9 ; 9 ; "path" ESC \`)
-// right before the normal prompt text, then renders the default `PS C:\…> `
-// prompt unchanged. The manager parses those reports out of the output stream
-// to track each session's working directory for tab persistence; xterm.js
-// ignores the unknown OSC sequence. The shell runs with -NoProfile, so the
-// default prompt is what is being reproduced.
-const promptHookScript = `
-function global:prompt {
-  $h = $host.UI
-  $h.Write([char]27 + ']9;9;' + [char]34 + (Get-Location).Path + [char]34 + [char]27 + '\')
-  'PS ' + $executionContext.SessionState.Path.CurrentLocation + ('>' * ($nestedPromptLevel + 1)) + ' '
-}
-`
-
-// pwshCommandLine builds the pwsh invocation used for every session. The
-// prompt hook is injected through -EncodedCommand so no quote escaping is
-// needed; -NoExit keeps the shell interactive after the hook was installed.
-func pwshCommandLine() string {
-	return "pwsh.exe -NoLogo -NoProfile -NoExit -EncodedCommand " + encodeCommand(promptHookScript)
-}
-
-// encodeCommand base64-encodes a script as UTF-16LE, the format PowerShell's
-// -EncodedCommand expects.
-func encodeCommand(script string) string {
-	u := utf16.Encode([]rune(script))
-	b := make([]byte, 0, len(u)*2)
-	for _, v := range u {
-		b = append(b, byte(v), byte(v>>8))
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }
 
 // resolveWorkDir returns the working directory a new shell should start in:
@@ -247,13 +208,13 @@ func (s *SessionManager) WriteInput(id string, data string) error {
 	return s.getSession(id).writeInput(data)
 }
 
-// Resize informs the ConPTY of the terminal's new dimensions so pwsh reflows
-// its layout. Called by the frontend whenever xterm.js is resized.
+// Resize informs the pty of the terminal's new dimensions so the shell
+// reflows its layout. Called by the frontend whenever xterm.js is resized.
 func (s *SessionManager) Resize(id string, cols, rows int) error {
 	return s.getSession(id).resize(cols, rows)
 }
 
-// StopSession terminates a session's ConPTY and shell, then forgets it.
+// StopSession terminates a session's pty and shell, then forgets it.
 func (s *SessionManager) StopSession(id string) error {
 	s.mu.Lock()
 	sess, ok := s.sessions[id]
@@ -422,11 +383,11 @@ func (s *SessionManager) ExecuteCommand(id, command string, timeout time.Duratio
 	return string(data), timedOut, nil
 }
 
-// readLoop forwards ConPTY output to the frontend and the session buffer.
+// readLoop forwards pty output to the frontend and the session buffer.
 func (s *SessionManager) readLoop(sess *TerminalSession) {
 	buf := make([]byte, 4096)
 	for {
-		n, err := sess.cpty.Read(buf)
+		n, err := sess.p.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
 			sess.buf.write(chunk)
@@ -438,7 +399,7 @@ func (s *SessionManager) readLoop(sess *TerminalSession) {
 			s.emitData(sess, string(chunk))
 		}
 		if err != nil {
-			log.Printf("conpty read ended for session %s: %v", sess.ID, err)
+			log.Printf("pty read ended for session %s: %v", sess.ID, err)
 			return
 		}
 	}
@@ -448,8 +409,8 @@ func (s *SessionManager) readLoop(sess *TerminalSession) {
 // stays registered so its final output remains readable (via read_output /
 // the UI buffer) until the window closes or the session is stopped.
 func (s *SessionManager) waitExit(sess *TerminalSession) {
-	exitCode, waitErr := sess.cpty.Wait(context.Background())
-	log.Printf("pwsh session %s exited: code=%v err=%v", sess.ID, exitCode, waitErr)
+	exitCode, waitErr := sess.p.Wait(context.Background())
+	log.Printf("session %s exited: code=%v err=%v", sess.ID, exitCode, waitErr)
 	sess.mu.Lock()
 	sess.running = false
 	sess.mu.Unlock()

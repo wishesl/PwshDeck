@@ -1,6 +1,6 @@
-// Package session manages interactive pwsh processes running inside Windows
-// ConPTYs, so shells behave exactly like a real terminal (Tab completion,
-// PSReadLine, progress bars, Ctrl+C, ...).
+// Package session manages interactive shells running inside pseudo-terminals
+// (Windows ConPTY, Unix pty), so they behave exactly like a real terminal (Tab
+// completion, line editing, progress bars, Ctrl+C, ...).
 package session
 
 import (
@@ -12,26 +12,24 @@ import (
 	"regexp"
 	"sync"
 	"time"
-
-	"github.com/UserExistsError/conpty"
 )
 
-// outputBufLimit caps how many recent ConPTY output bytes are kept in memory
-// per session, so MCP clients can read output produced while they were away.
+// outputBufLimit caps how many recent pty output bytes are kept in memory per
+// session, so MCP clients can read output produced while they were away.
 const outputBufLimit = 512 * 1024
 
-// TerminalSession is one pwsh process running inside a Windows ConPTY.
+// TerminalSession is one shell process running inside a pseudo-terminal.
 type TerminalSession struct {
 	ID     string
 	Title  string
 	Window string
 	// Pwd is the shell's current working directory, tracked from the OSC 9;9
-	// cwd reports the prompt hook (see pwshCommandLine in manager.go) emits on
-	// every prompt. Tabs persist it so a restored shell boots in the same
-	// directory. Guarded by mu.
+	// cwd reports the prompt hook (see startShellPTY) emits on every prompt.
+	// Tabs persist it so a restored shell boots in the same directory. Guarded
+	// by mu.
 	Pwd string
 
-	cpty *conpty.ConPty
+	p    pty
 	cols int
 	rows int
 
@@ -165,14 +163,14 @@ func (s *TerminalSession) writeInput(data string) error {
 	}
 	s.lastActive = time.Now()
 
-	// Treat ConPTY as an io.Writer: a successful call is allowed to consume
+	// Treat the pty as an io.Writer: a successful call is allowed to consume
 	// fewer bytes than requested, and losing the tail of an escape sequence can
 	// corrupt cursor movement during key repeat.
 	remaining := []byte(data)
 	for len(remaining) > 0 {
-		n, err := s.cpty.Write(remaining)
+		n, err := s.p.Write(remaining)
 		if n < 0 || n > len(remaining) {
-			return fmt.Errorf("invalid ConPTY write count %d for %d bytes", n, len(remaining))
+			return fmt.Errorf("invalid pty write count %d for %d bytes", n, len(remaining))
 		}
 		remaining = remaining[n:]
 		if err != nil {
@@ -195,10 +193,10 @@ func (s *TerminalSession) resize(cols, rows int) error {
 		return fmt.Errorf("invalid terminal size %dx%d", cols, rows)
 	}
 	s.cols, s.rows = cols, rows
-	return s.cpty.Resize(cols, rows)
+	return s.p.Resize(cols, rows)
 }
 
-// close shuts the ConPTY (and its shell) down. Safe to call multiple times.
+// close shuts the pty (and its shell) down. Safe to call multiple times.
 func (s *TerminalSession) close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -206,7 +204,7 @@ func (s *TerminalSession) close() error {
 		return nil
 	}
 	s.running = false
-	return s.cpty.Close()
+	return s.p.Close()
 }
 
 // outputBuffer keeps the most recent output bytes tagged with stable sequence

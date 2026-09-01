@@ -79,7 +79,7 @@ func runGUI() {
 	// the frontend files. 'Services' are exposed to the frontend bindings.
 	app := application.New(application.Options{
 		Name:        applicationName,
-		Description: "Interactive pwsh terminal with MCP remote control",
+		Description: "Interactive shell terminal (pwsh on Windows, bash on macOS/Linux) with MCP remote control",
 		Services: []application.Service{
 			application.NewService(pwshSvc),
 			application.NewService(winSvc),
