@@ -4,7 +4,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(8, 10, 16, 0.35);
+  /* Lighter chat surface than the terminal behind it, so the conversation
+     reads as its own (slightly raised) area without glaring contrast. */
+  background: rgba(27, 32, 45, 0.5);
   --wails-draggable: no-drag;
 }
 
@@ -28,21 +30,8 @@
   color: var(--text-strong);
 }
 
-/* Diagnostic: the exact sequence of agent_event types received during the
-   current run. Visible so a broken tool chain is obvious instead of silent. */
-.agent-trace {
-  flex: none;
-  padding: 4px 14px;
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--text-muted);
-  background: rgba(122, 162, 247, 0.06);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow-x: auto;
-  max-height: 28px;
-}
+/* Diagnostic trace bar removed from the UI: the event sequence is logged to
+   agent.log instead of occupying the panel header. */
 
 .agent-logo {
   display: inline-flex;
@@ -107,13 +96,118 @@
   border-color: var(--danger);
 }
 
+.agent-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Full-permission mode toggle: quiet when off, warning-tinted when on. */
+.agent-perm {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.agent-perm:hover {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.agent-perm.on {
+  color: var(--warning);
+  border-color: rgba(224, 175, 104, 0.6);
+  background: rgba(224, 175, 104, 0.12);
+  font-weight: 600;
+}
+
+.agent-perm-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--warning);
+  background: rgba(224, 175, 104, 0.08);
+  border-bottom: 1px solid rgba(224, 175, 104, 0.35);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-perm-banner-text {
+  flex: 1;
+}
+
+.agent-perm-banner-close {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.agent-perm-banner:hover .agent-perm-banner-close {
+  opacity: 1;
+}
+
+/* Running status strip: a second, input-adjacent status + stop control, so
+   the running state stays visible near where the user is typing. */
+.agent-run-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(14, 17, 27, 0.55);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.agent-run-strip-label {
+  flex: 1;
+}
+
+.agent-run-strip-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: agent-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-run-strip.pending .agent-run-strip-dot {
+  background: var(--warning);
+  box-shadow: 0 0 6px var(--warning);
+}
+
 .agent-scroll {
   flex: 1;
   overflow-y: auto;
+  /* Chat content wraps; a horizontal scrollbar here spans the full panel
+     width, looks out of place and never aligns with the content — clip. */
+  overflow-x: hidden;
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Flex children default to flex-shrink: 1; in a fixed-height column scroll
+   container, items with overflow: hidden (the cards below) have an automatic
+   minimum size of 0 and get squashed into a thin line once the content
+   outgrows the viewport — instead of overflowing into a scrollbar. Chat
+   items must keep their natural height and let the container scroll. */
+.agent-scroll > * {
+  flex: none;
 }
 
 .agent-empty {
@@ -165,13 +259,33 @@
   gap: 4px;
 }
 
-.agent-msg.user {
+/* NOTE: the row classes in AgentPanel.tsx are agent-user / agent-assistant /
+   agent-error. Selectors must use those exact names — a past mismatch
+   (.user / .assistant) silently disabled every bubble style below. */
+.agent-msg.agent-user {
   align-items: flex-end;
 }
 
-.agent-msg.assistant,
-.agent-msg.system,
-.agent-msg.error {
+/* Turn separator: each new user input starts a visually distinct turn, so it
+   never blurs into the AI output above it. The divider bleeds into the scroll
+   padding for a full-width hairline. */
+.agent-msg.agent-user:not(:first-child) {
+  position: relative;
+  margin-top: 10px;
+  padding-top: 14px;
+}
+
+.agent-msg.agent-user:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -16px;
+  right: -16px;
+  border-top: 1px solid var(--border);
+}
+
+.agent-msg.agent-assistant,
+.agent-msg.agent-error {
   align-items: flex-start;
 }
 
@@ -185,15 +299,17 @@
   word-break: break-word;
 }
 
-.agent-msg.user .agent-bubble {
-  background: rgba(122, 162, 247, 0.16);
-  border: 1px solid rgba(122, 162, 247, 0.35);
+/* User input: right-aligned blue bubble — reads as "me". */
+.agent-msg.agent-user .agent-bubble {
+  background: rgba(122, 162, 247, 0.2);
+  border: 1px solid rgba(122, 162, 247, 0.4);
   color: var(--text-strong);
   border-top-right-radius: 2px;
 }
 
-.agent-msg.assistant .agent-bubble {
-  background: rgba(20, 24, 36, 0.8);
+/* AI output: left-aligned dark bubble — reads as "assistant". */
+.agent-msg.agent-assistant .agent-bubble {
+  background: rgba(36, 42, 60, 0.85);
   border: 1px solid var(--border-strong);
   color: var(--text);
   border-top-left-radius: 2px;
@@ -215,26 +331,29 @@
   50% { opacity: 0; }
 }
 
-.agent-msg.system .agent-bubble {
-  font-size: 12px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px dashed var(--border-strong);
-}
-
-.agent-msg.error .agent-bubble {
+/* Error messages render as bare text inside the row (no .agent-bubble
+   child), so the card styling goes on the row itself. */
+.agent-msg.agent-error {
+  max-width: 88%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
   color: var(--danger);
   background: rgba(247, 118, 142, 0.08);
   border: 1px solid rgba(247, 118, 142, 0.4);
 }
 
 /* Collapsible info blocks: system prompt injection, deep thinking, tools.
-   Everything except assistant text is collapsed by default. */
+   Everything except assistant text is collapsed by default. Same quiet card
+   family as the tool card below. */
 .agent-block {
   width: 88%;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(14, 17, 27, 0.6);
+  background: rgba(255, 255, 255, 0.025);
   overflow: hidden;
   font-size: 12px;
 }
@@ -246,7 +365,6 @@
   width: 100%;
   padding: 6px 10px;
   border: none;
-  border-bottom: 1px solid var(--border);
   background: transparent;
   color: var(--text);
   font-family: inherit;
@@ -302,6 +420,7 @@
 
 .agent-block-body {
   padding: 8px 10px;
+  border-top: 1px solid var(--border);
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text);
@@ -312,15 +431,14 @@
   overflow-y: auto;
 }
 
-/* Tool card: a distinct, high-contrast card so tool calls are always visible
-   as cards — never a thin line or blank. Collapsed shows single-line
-   summaries; expanded shows full input/output. */
+/* Tool card: quiet, low-contrast card — the call stays visible as a card
+   without shouting. Collapsed shows single-line summaries; expanded shows
+   full input/output. */
 .agent-tool-card {
   width: 100%;
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(20, 24, 36, 0.75);
+  background: rgba(255, 255, 255, 0.025);
   overflow: hidden;
   font-size: 12px;
 }
@@ -328,12 +446,12 @@
 .agent-tool-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border: none;
-  background: var(--accent-soft);
-  color: var(--text-strong);
+  background: transparent;
+  color: var(--text);
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -341,7 +459,7 @@
 }
 
 .agent-tool-card-head:hover {
-  background: rgba(122, 162, 247, 0.2);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .agent-tool-card-state {
@@ -368,31 +486,30 @@
 
 .agent-tool-card-name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono, monospace);
-  font-weight: 700;
-  color: var(--accent-strong);
+  font-weight: 600;
+  color: var(--text-strong);
 }
 
 .agent-tool-card-status {
   flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .agent-tool-card-status.running {
-  background: rgba(122, 162, 247, 0.18);
   color: var(--accent);
 }
 
 .agent-tool-card-status.done {
-  background: rgba(158, 206, 106, 0.16);
   color: var(--success);
 }
 
 .agent-tool-card-status.error {
-  background: rgba(247, 118, 142, 0.16);
   color: var(--danger);
 }
 
@@ -404,21 +521,17 @@
 .agent-tool-card-line {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 6px 11px 8px;
 }
 
 .agent-tool-card-line:not(:first-child) {
-  border-top: 1px dashed var(--border);
+  border-top: 1px solid var(--border);
 }
 
 .agent-tool-card-key {
   flex: none;
-  width: 32px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -426,8 +539,8 @@
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11.5px;
+  line-height: 1.55;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;

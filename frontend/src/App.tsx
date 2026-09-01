@@ -480,7 +480,14 @@ export default function App() {
     if (!api) return;
     const existing = api.getPanel('agent');
     if (existing) {
-      existing.api.group.model.openPanel(existing);
+      // Toggle behavior: when the agent pane is already front-and-center, the
+      // toolbar button collapses the whole pane; otherwise it brings it back
+      // (either re-activating a background tab or re-adding a closed pane).
+      if (api.activePanel?.id === 'agent') {
+        existing.api.close();
+      } else {
+        existing.api.group.model.openPanel(existing);
+      }
       return;
     }
     // Split the current view: place the agent in a right-hand pane next to the
@@ -660,7 +667,7 @@ export default function App() {
         <button type="button" className="new-session-btn" title="新建会话" onClick={addTab}>
           ＋ 新建会话
         </button>
-        <button type="button" className="agent-btn" title="AI 助手" onClick={openAgentPanel}>
+        <button type="button" className="agent-btn" title="打开或收起 AI 助手" onClick={openAgentPanel}>
           <span className="agent-btn-logo">
             <AgentIcon size={13} />
           </span>

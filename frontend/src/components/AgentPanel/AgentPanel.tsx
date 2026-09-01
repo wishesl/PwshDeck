@@ -8,6 +8,7 @@ import {
   setPending as storeSetPending,
   setStatus as storeSetStatus,
   setConfigured as storeSetConfigured,
+  setAutoApprove as storeSetAutoApprove,
   getAgentState,
   type Block,
   type ToolCall,
@@ -53,17 +54,13 @@ const blockLabel: Record<'system' | 'thinking' | 'tool', string> = {
 };
 
 export default function AgentPanel({ onOpenSettings }: Props) {
-  const { blocks, pending, status, configured } = useAgentStore();
+  const { blocks, pending, status, configured, autoApprove } = useAgentStore();
   const [input, setInput] = useState('');
-  // Diagnostic: sequence of event types received during the current run, so a
-  // misbehaving tool chain is visible instead of silently showing nothing.
-  const [eventTrace, setEventTrace] = useState<string[]>([]);
+  // The full-permission warning banner can be collapsed by clicking it; the
+  // mode itself stays on until the header toggle is used again.
+  const [permBannerOpen, setPermBannerOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-
-  const trace = (type: string) => {
-    setEventTrace((prev) => (prev.length > 60 ? [...prev.slice(-59), type] : [...prev, type]));
-  };
 
   // Log component lifecycle so a remount (which wipes local state) is visible
   // in the same agent.log as the backend event stream.
@@ -108,6 +105,11 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     } catch {
       storeSetConfigured(false);
     }
+    try {
+      storeSetAutoApprove(await AgentService.IsAutoApprove());
+    } catch {
+      /* keep the last known toggle state */
+    }
   };
 
   useEffect(() => {
@@ -129,7 +131,6 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     const off = Events.On('agent_event', (event: any) => {
       const ev = (event?.data ?? event) as AgentEventPayload;
       if (!ev || typeof ev.type !== 'string') return;
-      trace(ev.type);
       switch (ev.type) {
         case 'status':
           storeSetStatus(
@@ -272,6 +273,20 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     }
   };
 
+  // Flip full-permission mode. Optimistic: update the store first so the
+  // toggle feels instant; the backend config event re-syncs every window.
+  const toggleAutoApprove = async () => {
+    const next = !getAgentState().autoApprove;
+    storeSetAutoApprove(next);
+    if (next) setPermBannerOpen(true);
+    try {
+      await AgentService.SetAutoApprove(next);
+    } catch (e) {
+      storeSetAutoApprove(!next);
+      updateBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
+    }
+  };
+
   if (configured === false) {
     return (
       <div className="agent-panel agent-empty">
@@ -303,16 +318,37 @@ export default function AgentPanel({ onOpenSettings }: Props) {
             {statusLabel}
           </span>
         </div>
-        {status === 'running' && (
-          <button type="button" className="agent-ghost" onClick={cancel}>
-            停止
+        <div className="agent-head-actions">
+          <button
+            type="button"
+            className={`agent-perm ${autoApprove ? 'on' : ''}`}
+            title={
+              autoApprove
+                ? '完全权限已开启：所有操作免审批直接执行。点击关闭。'
+                : '开启完全权限模式：写命令、发送输入、停止会话不再需要审批'
+            }
+            onClick={toggleAutoApprove}
+          >
+            ⚡ 完全权限
           </button>
-        )}
+          {status === 'running' && (
+            <button type="button" className="agent-ghost" onClick={cancel}>
+              停止
+            </button>
+          )}
+        </div>
       </div>
 
-      {eventTrace.length > 0 && (
-        <div className="agent-trace" title="本次运行收到的事件序列（调试用）">
-          {eventTrace.join(' → ')}
+      {autoApprove && permBannerOpen && (
+        <div
+          className="agent-perm-banner"
+          title="点击收起（模式保持开启）"
+          onClick={() => setPermBannerOpen(false)}
+        >
+          <span className="agent-perm-banner-text">
+            ⚡ 完全权限模式：所有操作免审批直接执行，请注意风险
+          </span>
+          <span className="agent-perm-banner-close">×</span>
         </div>
       )}
 
@@ -424,6 +460,18 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           </div>
         )}
       </div>
+
+      {(status === 'running' || status === 'pending') && (
+        <div className={`agent-run-strip ${status}`}>
+          <span className="agent-run-strip-dot" />
+          <span className="agent-run-strip-label">
+            {status === 'running' ? '思考中…' : '等待审批'}
+          </span>
+          <button type="button" className="agent-ghost" onClick={cancel}>
+            停止
+          </button>
+        </div>
+      )}
 
       <div className="agent-input-row">
         <textarea
