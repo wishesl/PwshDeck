@@ -2,6 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Events } from '@wailsio/runtime';
 import { AgentService } from '../../../bindings/pwshdeck/internal/agent';
 import AgentIcon from '../AgentIcon';
+import {
+  useAgentStore,
+  updateBlocks,
+  setPending as storeSetPending,
+  setStatus as storeSetStatus,
+  setConfigured as storeSetConfigured,
+  getAgentState,
+  type Block,
+  type ToolCall,
+} from './agentStore';
 import './AgentPanel.css';
 
 // Wire payload of the agent_event Wails event (mirrors internal/agent.AgentEvent).
@@ -17,35 +27,6 @@ type AgentEventPayload = {
   command?: string;
   session_id?: string;
 };
-
-type ToolCall = {
-  id: string;
-  name: string;
-  input: string;
-  output: string;
-  state: 'running' | 'done' | 'error';
-};
-
-type PendingApproval = {
-  callId: string;
-  tool: string;
-  input: string;
-  command: string;
-  sessionId: string;
-  prompt: string;
-};
-
-// Conversation is an ordered list of blocks in the order the AI actually
-// produced them: system prompt injection, deep thinking, tool calls, and
-// assistant text all appear as their own block. Except for assistant text,
-// every block defaults to collapsed.
-type Block =
-  | { kind: 'user'; text: string }
-  | { kind: 'system'; text: string; collapsed: boolean }
-  | { kind: 'thinking'; text: string; streaming: boolean; collapsed: boolean }
-  | { kind: 'tool'; call: ToolCall; collapsed: boolean }
-  | { kind: 'assistant'; text: string; streaming: boolean }
-  | { kind: 'error'; text: string };
 
 type Props = {
   onOpenSettings: () => void;
@@ -66,28 +47,36 @@ const blockLabel: Record<'system' | 'thinking' | 'tool', string> = {
 };
 
 export default function AgentPanel({ onOpenSettings }: Props) {
-  const [blocks, setBlocks] = useState<Block[]>([]);
-  const [status, setStatus] = useState<'idle' | 'running' | 'pending'>('idle');
-  const [pending, setPending] = useState<PendingApproval | null>(null);
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const { blocks, pending, status, configured } = useAgentStore();
   const [input, setInput] = useState('');
   // Diagnostic: sequence of event types received during the current run, so a
   // misbehaving tool chain is visible instead of silently showing nothing.
   const [eventTrace, setEventTrace] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
-  const pendingRef = useRef(pending);
-  pendingRef.current = pending;
 
   const trace = (type: string) => {
     setEventTrace((prev) => (prev.length > 60 ? [...prev.slice(-59), type] : [...prev, type]));
   };
 
+  // Log component lifecycle so a remount (which wipes local state) is visible
+  // in the same agent.log as the backend event stream.
+  useEffect(() => {
+    AgentService.LogFrontend(
+      `AgentPanel MOUNT blocks=${getAgentState().blocks.length} status=${getAgentState().status}`,
+    ).catch(() => {});
+    return () => {
+      AgentService.LogFrontend(
+        `AgentPanel UNMOUNT blocks=${getAgentState().blocks.length} status=${getAgentState().status}`,
+      ).catch(() => {});
+    };
+  }, []);
+
   // Append a text delta to the trailing block when it is the same kind,
   // otherwise start a new block. This keeps the conversation in the AI's
   // actual output order (thinking, then text, then tool, then more text...).
   const appendDelta = (kind: 'assistant' | 'thinking', text: string) => {
-    setBlocks((prev) => {
+    updateBlocks((prev) => {
       const next = [...prev];
       const last = next[next.length - 1];
       if (last && last.kind === kind) {
@@ -109,9 +98,9 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   const refreshConfig = async () => {
     try {
       const [ok] = await AgentService.IsConfigured();
-      setConfigured(ok);
+      storeSetConfigured(ok);
     } catch {
-      setConfigured(false);
+      storeSetConfigured(false);
     }
   };
 
@@ -120,9 +109,9 @@ export default function AgentPanel({ onOpenSettings }: Props) {
     (async () => {
       try {
         const [ok] = await AgentService.IsConfigured();
-        if (!cancelled) setConfigured(ok);
+        if (!cancelled) storeSetConfigured(ok);
       } catch {
-        if (!cancelled) setConfigured(false);
+        if (!cancelled) storeSetConfigured(false);
       }
     })();
     return () => {
@@ -137,13 +126,13 @@ export default function AgentPanel({ onOpenSettings }: Props) {
       trace(ev.type);
       switch (ev.type) {
         case 'status':
-          setStatus(
+          storeSetStatus(
             (ev.state === 'running' || ev.state === 'pending' ? ev.state : 'idle') as
               | 'idle'
               | 'running'
               | 'pending',
           );
-          if (ev.state === 'running' && pendingRef.current) setPending(null);
+          if (ev.state === 'running' && getAgentState().pending) storeSetPending(null);
           break;
         case 'delta':
           if (ev.text) appendDelta('assistant', ev.text);
@@ -153,7 +142,7 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           break;
         case 'system':
           if (ev.text) {
-            setBlocks((prev) => [...prev, { kind: 'system', text: ev.text!, collapsed: true }]);
+            updateBlocks((prev) => [...prev, { kind: 'system', text: ev.text!, collapsed: true }]);
           }
           break;
         case 'tool_call': {
@@ -164,11 +153,11 @@ export default function AgentPanel({ onOpenSettings }: Props) {
             output: '',
             state: 'running',
           };
-          setBlocks((prev) => [...prev, { kind: 'tool', call, collapsed: true }]);
+          updateBlocks((prev) => [...prev, { kind: 'tool', call, collapsed: true }]);
           break;
         }
         case 'tool_result':
-          setBlocks((prev) =>
+          updateBlocks((prev) =>
             prev.map((b) =>
               b.kind === 'tool' && b.call.id === ev.call_id
                 ? { ...b, call: { ...b.call, output: ev.output ?? '', state: 'done' } }
@@ -177,7 +166,7 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           );
           break;
         case 'pending':
-          setPending({
+          storeSetPending({
             callId: ev.call_id || '',
             tool: ev.tool || '',
             input: ev.input || '',
@@ -185,10 +174,10 @@ export default function AgentPanel({ onOpenSettings }: Props) {
             sessionId: ev.session_id || '',
             prompt: ev.prompt || '',
           });
-          setStatus('pending');
+          storeSetStatus('pending');
           break;
         case 'done':
-          setBlocks((prev) => {
+          updateBlocks((prev) => {
             const next = prev.map((b) =>
               b.kind === 'assistant' || b.kind === 'thinking' ? { ...b, streaming: false } : b,
             );
@@ -206,8 +195,8 @@ export default function AgentPanel({ onOpenSettings }: Props) {
           });
           break;
         case 'error':
-          setBlocks((prev) => [...prev, { kind: 'error', text: ev.text || '未知错误' }]);
-          setStatus('idle');
+          updateBlocks((prev) => [...prev, { kind: 'error', text: ev.text || '未知错误' }]);
+          storeSetStatus('idle');
           break;
         case 'config':
           refreshConfig();
@@ -232,7 +221,7 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   };
 
   const toggleBlock = (idx: number) => {
-    setBlocks((prev) =>
+    updateBlocks((prev) =>
       prev.map((b, i) => {
         if (i !== idx || (b.kind !== 'system' && b.kind !== 'thinking' && b.kind !== 'tool')) return b;
         return { ...b, collapsed: !b.collapsed };
@@ -243,29 +232,29 @@ export default function AgentPanel({ onOpenSettings }: Props) {
   const send = async () => {
     const text = input.trim();
     if (!text || status !== 'idle' || configured === false) return;
-    setBlocks((prev) => [...prev, { kind: 'user', text }]);
+    updateBlocks((prev) => [...prev, { kind: 'user', text }]);
     setInput('');
     try {
       await AgentService.SendMessage(text);
     } catch (e) {
-      setBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
-      setStatus('idle');
+      updateBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
+      storeSetStatus('idle');
     }
   };
 
   const approve = async (approved: boolean) => {
     if (!pending) return;
     const p = pending;
-    setPending(null);
-    setBlocks((prev) => [
+    storeSetPending(null);
+    updateBlocks((prev) => [
       ...prev,
       { kind: 'user', text: approved ? `（已批准执行：${p.command}）` : `（已拒绝：${p.command}）` },
     ]);
     try {
       await AgentService.Approve(p.callId, approved);
     } catch (e) {
-      setBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
-      setStatus('idle');
+      updateBlocks((prev) => [...prev, { kind: 'error', text: String(e) }]);
+      storeSetStatus('idle');
     }
   };
 

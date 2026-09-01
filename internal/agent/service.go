@@ -224,6 +224,13 @@ func (a *AgentService) Cancel() error {
 	return nil
 }
 
+// LogFrontend lets the frontend write a diagnostic line into the agent log
+// (e.g. component mount/unmount or state transitions) so UI-only bugs can be
+// correlated with the backend event stream in a single file.
+func (a *AgentService) LogFrontend(msg string) {
+	agentLogf("frontend: %s", msg)
+}
+
 // finishRun clears the busy flag and reports the idle state. If an approval
 // is still pending (the turn ended in a suspension), stay in the "pending"
 // state instead of flipping back to idle.

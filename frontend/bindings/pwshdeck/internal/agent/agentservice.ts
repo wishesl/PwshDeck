@@ -50,6 +50,15 @@ export function IsConfigured(): $CancellablePromise<[boolean, string]> {
 }
 
 /**
+ * LogFrontend lets the frontend write a diagnostic line into the agent log
+ * (e.g. component mount/unmount or state transitions) so UI-only bugs can be
+ * correlated with the backend event stream in a single file.
+ */
+export function LogFrontend(msg: string): $CancellablePromise<void> {
+    return $Call.ByID(2475040482, msg);
+}
+
+/**
  * SendMessage feeds a user message to the agent and returns immediately; the
  * turn runs in a goroutine and progress streams over agent_event. An error is
  * returned only when the message cannot start (busy, awaiting approval, or
