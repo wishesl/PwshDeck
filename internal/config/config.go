@@ -48,6 +48,23 @@ type TabPref struct {
 	Pwd string `json:"pwd"`
 }
 
+// LLMConfig holds the settings for the built-in AI agent's model provider.
+// The endpoint/model follow the OpenAI-compatible wire format, so DeepSeek,
+// Ollama and other compatible services all work by pointing the endpoint at
+// their base URL. An empty endpoint means "use the provider default".
+type LLMConfig struct {
+	// Provider selects the provider implementation: "openaicompletions"
+	// (default; any OpenAI-compatible endpoint) or "ollama".
+	Provider string `json:"provider"`
+	// Endpoint is the provider's base URL (e.g.
+	// https://api.deepseek.com/v1/chat/completions). Empty = provider default.
+	Endpoint string `json:"endpoint"`
+	// Model is the model name to use (e.g. deepseek-chat, qwen2.5-coder).
+	Model string `json:"model"`
+	// APIKey is the API key for cloud providers; ignored by local providers.
+	APIKey string `json:"api_key"`
+}
+
 // Config holds persisted application settings.
 type Config struct {
 	// MCPEnabled auto-starts the streamable-HTTP MCP server on launch.
@@ -61,6 +78,8 @@ type Config struct {
 	// IdleTimeoutMinutes auto-recycles window-less sessions idle this long
 	// (0 = disabled).
 	IdleTimeoutMinutes int `json:"idle_timeout_minutes"`
+	// LLM configures the built-in AI agent's model provider.
+	LLM LLMConfig `json:"llm"`
 	// Tabs holds the terminal tab layout (title + accent color per tab).
 	Tabs []TabPref `json:"tabs"`
 	// Layout is the serialized dockview split layout (JSON from api.toJSON()).
@@ -115,8 +134,14 @@ func Defaults() *Config {
 		MCPSessionTimeoutMinutes: DefaultMCPSessionTimeoutMinutes,
 		MaxSessions:              DefaultMaxSessions,
 		IdleTimeoutMinutes:       DefaultIdleTimeoutMinutes,
+		LLM:                      DefaultLLM(),
 		LayoutDraggable:          true,
 	}
+}
+
+// DefaultLLM returns the default agent model configuration.
+func DefaultLLM() LLMConfig {
+	return LLMConfig{Provider: "openaicompletions"}
 }
 
 // sanitize repairs out-of-range values with their defaults.
@@ -135,6 +160,9 @@ func (c *Config) sanitize() {
 	}
 	if c.Tabs == nil {
 		c.Tabs = []TabPref{}
+	}
+	if c.LLM.Provider == "" {
+		c.LLM.Provider = "openaicompletions"
 	}
 }
 

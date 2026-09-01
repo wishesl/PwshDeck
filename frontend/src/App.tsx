@@ -9,6 +9,8 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
+import AgentPanel from './components/AgentPanel';
+import AgentSettings from './components/AgentSettings/AgentSettings';
 import McpPanel from './components/McpPanel';
 import SettingsPanel from './components/SettingsPanel/SettingsPanel';
 import TabMenu from './components/TabMenu';
@@ -384,6 +386,7 @@ export default function App() {
           />
         );
       },
+      agent: () => <AgentPanel onOpenSettings={() => setSettingsOpen(true)} />,
     }),
     [],
   );
@@ -469,6 +472,17 @@ export default function App() {
     tabsRef.current = next;
     setTabs(next);
     persistTabsRef.current(next);
+  };
+
+  const openAgentPanel = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    const existing = api.getPanel('agent');
+    if (existing) {
+      existing.api.group.model.openPanel(existing);
+    } else {
+      api.addPanel({ id: 'agent', component: 'agent', title: 'AI 助手', renderer: 'always' });
+    }
   };
 
   useEffect(() => {
@@ -631,6 +645,10 @@ export default function App() {
         <button type="button" className="new-session-btn" title="新建会话" onClick={addTab}>
           ＋ 新建会话
         </button>
+        <button type="button" className="agent-btn" title="AI 助手" onClick={openAgentPanel}>
+          <span className="agent-btn-logo">🤖</span>
+          AI 助手
+        </button>
         <button type="button" className="settings-btn" title="设置" onClick={() => setSettingsOpen(true)}>
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
             <path
@@ -759,6 +777,12 @@ export default function App() {
                   <h2>MCP 管理</h2>
                 </div>
                 <McpPanel />
+              </section>
+              <section className="settings-mcp-section">
+                <div className="settings-subhead">
+                  <h2>AI 助手</h2>
+                </div>
+                <AgentSettings />
               </section>
             </div>
           </div>

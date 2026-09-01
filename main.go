@@ -10,6 +10,7 @@ import (
 	mcpapi "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"pwshdeck/internal/agent"
 	"pwshdeck/internal/config"
 	"pwshdeck/internal/mcp"
 	"pwshdeck/internal/session"
@@ -73,17 +74,19 @@ func runGUI() {
 	)
 	winSvc := window.NewWindowManager()
 	mcpSvc := mcp.NewMCPService(cfg)
+	agentSvc := agent.NewAgentService(cfg.LLM)
 
 	// Create a new Wails application by providing the necessary options.
 	// 'Assets' configures the asset server with the 'FS' variable pointing to
 	// the frontend files. 'Services' are exposed to the frontend bindings.
 	app := application.New(application.Options{
 		Name:        applicationName,
-		Description: "Interactive pwsh terminal with MCP remote control",
+		Description: "Interactive pwsh terminal with built-in AI assistant and MCP remote control",
 		Services: []application.Service{
 			application.NewService(pwshSvc),
 			application.NewService(winSvc),
 			application.NewService(mcpSvc),
+			application.NewService(agentSvc),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -96,12 +99,14 @@ func runGUI() {
 	pwshSvc.Init(app)
 	winSvc.Init(app, pwshSvc)
 	mcpSvc.Init(app, pwshSvc, winSvc)
+	agentSvc.Init(app, pwshSvc)
 
 	// The system tray icon is created together with the first window.
 	winSvc.SetTrayIcon(appIcon)
 
 	// Close every shell when the application exits.
 	app.OnShutdown(func() {
+		_ = agentSvc.Cancel()
 		mcpSvc.Shutdown()
 		pwshSvc.ShutdownAll()
 	})

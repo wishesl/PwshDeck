@@ -334,6 +334,34 @@
   background: rgba(122, 162, 247, 0.22);
 }
 
+.agent-btn {
+  height: 30px;
+  padding: 0 12px;
+  gap: 6px;
+  border: 1px solid rgba(158, 206, 106, 0.35);
+  border-radius: var(--radius);
+  background: rgba(158, 206, 106, 0.08);
+  color: var(--success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.agent-btn:hover {
+  color: var(--success);
+  border-color: rgba(158, 206, 106, 0.6);
+  background: rgba(158, 206, 106, 0.16);
+}
+
+.agent-btn-logo {
+  font-size: 13px;
+}
+
 .settings-btn {
   height: 30px;
   padding: 0 10px;
