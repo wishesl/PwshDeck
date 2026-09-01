@@ -312,132 +312,132 @@
   overflow-y: auto;
 }
 
-/* Tool block specifics. */
-.agent-tool-state {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  text-align: center;
-  line-height: 8px;
+/* Tool card: a distinct, high-contrast card so tool calls are always visible
+   as cards — never a thin line or blank. Collapsed shows single-line
+   summaries; expanded shows full input/output. */
+.agent-tool-card {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(20, 24, 36, 0.75);
+  overflow: hidden;
+  font-size: 12px;
 }
 
-.agent-tool-state.running {
+.agent-tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-tool-card-head:hover {
+  background: rgba(122, 162, 247, 0.2);
+}
+
+.agent-tool-card-state {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.agent-tool-card-state.running {
   background: var(--accent);
-  box-shadow: 0 0 5px var(--accent);
+  box-shadow: 0 0 6px var(--accent);
   animation: agent-pulse 1.2s ease-in-out infinite;
 }
 
-.agent-tool-state.done {
+.agent-tool-card-state.done {
   background: var(--success);
 }
 
-.agent-tool-state.error {
+.agent-tool-card-state.error {
   background: var(--danger);
 }
 
-.agent-tool-name {
+.agent-tool-card-name {
   flex: 1;
-  color: var(--accent);
-  font-weight: 600;
   font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: var(--accent-strong);
 }
 
-.agent-tool-ok {
-  color: var(--success);
+.agent-tool-card-status {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
   font-size: 11px;
+  font-weight: 600;
 }
 
-/* Tool status tag pinned to the right of the card header. */
-.agent-tool-status {
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 500;
-  font-family: inherit;
-}
-
-.agent-tool-status.running {
+.agent-tool-card-status.running {
+  background: rgba(122, 162, 247, 0.18);
   color: var(--accent);
 }
 
-.agent-tool-status.done {
+.agent-tool-card-status.done {
+  background: rgba(158, 206, 106, 0.16);
   color: var(--success);
 }
 
-.agent-tool-status.error {
+.agent-tool-card-status.error {
+  background: rgba(247, 118, 142, 0.16);
   color: var(--danger);
 }
 
-/* Collapsed tool card shows single-line input/output summaries so it reads
-   as a real card, not a thin unselectable line. */
-.agent-tool-summary {
+.agent-tool-card-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-tool-card-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 4px 10px;
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  line-height: 1.5;
-  min-height: 22px;
+  gap: 10px;
+  padding: 6px 12px;
 }
 
-.agent-tool-summary-label {
-  flex: none;
-  color: var(--text-muted);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.agent-tool-summary-text {
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agent-tool-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.agent-tool-part {
-  display: flex;
-  flex-direction: column;
-}
-
-.agent-tool-part:not(:first-child) {
+.agent-tool-card-line:not(:first-child) {
   border-top: 1px dashed var(--border);
 }
 
-.agent-tool-part-label {
-  padding: 5px 10px 0;
+.agent-tool-card-key {
+  flex: none;
+  width: 32px;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.agent-tool-running-note {
-  padding: 6px 10px;
-  color: var(--accent);
-  font-size: 11px;
-}
-
-.agent-tool-io {
-  padding: 6px 10px;
+.agent-tool-card-val {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-muted);
-  font-family: var(--font-mono, monospace);
-  max-height: 200px;
-  overflow-y: auto;
 }
 
-.agent-tool-io.agent-tool-out {
-  color: var(--text);
+.agent-tool-card.collapsed .agent-tool-card-val {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
 }
 
 /* Pending approval card (write operation waiting for user). */

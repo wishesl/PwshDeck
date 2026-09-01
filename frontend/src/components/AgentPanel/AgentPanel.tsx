@@ -361,52 +361,35 @@ export default function AgentPanel({ onOpenSettings }: Props) {
               const statusText =
                 call.state === 'running' ? '进行中' : call.state === 'error' ? '失败' : '完成';
               return (
-                <div key={idx} className={`agent-block agent-block-tool${block.collapsed ? ' collapsed' : ''}`}>
-                  <button type="button" className="agent-block-head" onClick={() => toggleBlock(idx)}>
+                <div key={idx} className={`agent-tool-card ${call.state}${block.collapsed ? ' collapsed' : ''}`}>
+                  <button type="button" className="agent-tool-card-head" onClick={() => toggleBlock(idx)}>
                     <span className={`agent-chevron ${block.collapsed ? '' : 'open'}`}>▸</span>
-                    <span className={`agent-tool-state ${call.state}`}>
-                      {call.state === 'running' ? '●' : call.state === 'error' ? '✕' : '✓'}
-                    </span>
-                    <span className="agent-tool-name">{call.name}</span>
-                    <span className={`agent-tool-status ${call.state}`}>{statusText}</span>
+                    <span className={`agent-tool-card-state ${call.state}`} />
+                    <span className="agent-tool-card-name">{call.name}</span>
+                    <span className={`agent-tool-card-status ${call.state}`}>{statusText}</span>
                   </button>
-                  <div className="agent-tool-content">
-                    {block.collapsed ? (
-                      <>
-                        {call.input && (
-                          <div className="agent-tool-summary">
-                            <span className="agent-tool-summary-label">输入</span>
-                            <span className="agent-tool-summary-text">{summarize(prettyJson(call.input))}</span>
-                          </div>
-                        )}
-                        {call.output ? (
-                          <div className="agent-tool-summary">
-                            <span className="agent-tool-summary-label">输出</span>
-                            <span className="agent-tool-summary-text">{summarize(call.output)}</span>
-                          </div>
-                        ) : call.state === 'running' ? (
-                          <div className="agent-tool-running-note">正在执行…</div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <>
-                        {call.input && (
-                          <div className="agent-tool-part">
-                            <span className="agent-tool-part-label">输入</span>
-                            <pre className="agent-tool-io">{prettyJson(call.input)}</pre>
-                          </div>
-                        )}
-                        {call.output && (
-                          <div className="agent-tool-part">
-                            <span className="agent-tool-part-label">输出</span>
-                            <pre className="agent-tool-io agent-tool-out">{call.output}</pre>
-                          </div>
-                        )}
-                        {call.state === 'running' && (
-                          <span className="agent-tool-running-note">正在执行…</span>
-                        )}
-                      </>
+                  <div className="agent-tool-card-body">
+                    {call.input && (
+                      <div className="agent-tool-card-line">
+                        <span className="agent-tool-card-key">输入</span>
+                        <span className="agent-tool-card-val">
+                          {block.collapsed ? summarize(prettyJson(call.input)) : prettyJson(call.input)}
+                        </span>
+                      </div>
                     )}
+                    {call.output ? (
+                      <div className="agent-tool-card-line">
+                        <span className="agent-tool-card-key">输出</span>
+                        <span className="agent-tool-card-val">
+                          {block.collapsed ? summarize(call.output) : call.output}
+                        </span>
+                      </div>
+                    ) : call.state === 'running' ? (
+                      <div className="agent-tool-card-line">
+                        <span className="agent-tool-card-key">状态</span>
+                        <span className="agent-tool-card-val">正在执行…</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
