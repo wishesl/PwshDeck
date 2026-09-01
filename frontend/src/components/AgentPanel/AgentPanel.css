@@ -349,6 +349,54 @@
   font-size: 11px;
 }
 
+/* Tool status tag pinned to the right of the card header. */
+.agent-tool-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.agent-tool-status.running {
+  color: var(--accent);
+}
+
+.agent-tool-status.done {
+  color: var(--success);
+}
+
+.agent-tool-status.error {
+  color: var(--danger);
+}
+
+/* Collapsed tool card shows single-line input/output summaries so it reads
+   as a real card, not a thin unselectable line. */
+.agent-tool-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 22px;
+}
+
+.agent-tool-summary-label {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-tool-summary-text {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .agent-tool-content {
   display: flex;
   flex-direction: column;
