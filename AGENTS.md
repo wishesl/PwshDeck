@@ -121,3 +121,4 @@ bin\PwshDeck.exe --mcp
 - 提交信息用英文、conventional-commit 风格（`feat:` / `fix:` / `refactor:` …）。
 - 提交前跑 `go vet ./internal/...` 和 `go test ./internal/...`；改了前端就跑 `npm run build`；改了 Service 接口就跑 `wails3 generate bindings`。
 - 不要把 `build/appicon.png` 之类无关的既有改动混进功能提交。
+- 每次改完代码都要交付重新构建的 `bin/PwshDeck.exe`：执行 `wails3 build`（会生成 bindings、构建前端并打包），不要只跑 `go build`/`npm run build` 就交付。
