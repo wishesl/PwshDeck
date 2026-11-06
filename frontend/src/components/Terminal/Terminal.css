@@ -44,27 +44,30 @@ body {
   background-color: transparent !important;
 }
 
-/* Slim translucent scrollbar for the terminal viewport. */
+/* xterm 6 draws its own (VS Code style) scrollbar, so the browser's native
+   viewport scrollbar is only a decorative leftover — it is not part of the
+   scrolling path and shows arrow buttons of a different width. Hide it so the
+   terminal does not display two overlapping bars. */
+.terminal-xterm .xterm-viewport {
+  background-color: transparent !important;
+  scrollbar-width: none;
+}
+
 .terminal-xterm .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
+  display: none;
 }
 
-.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+/* xterm's scrollbar fades out once scrolling stops. Keep it visible whenever
+   the terminal has scrollback; the `fade` class is only added to a bar that
+   was shown and then hidden, so a session with nothing to scroll stays clean. */
+.terminal-xterm .xterm-scrollable-element > .scrollbar.vertical.invisible.fade {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transition: none !important;
+}
+
+.terminal-xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
   border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.26);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.terminal-xterm .xterm-viewport::-webkit-scrollbar-track,
-.terminal-xterm .xterm-viewport::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 /* Session lifecycle badge, floating over the terminal. */

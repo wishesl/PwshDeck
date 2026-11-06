@@ -37,6 +37,10 @@ function themeFor(accent: string): ITheme {
     cursor: accent,
     cursorAccent: '#0a0c14',
     selectionBackground: withAlpha(accent, 0.35),
+    // Enabling overviewRuler (only for the scrollbar width) makes xterm paint
+    // a 1px separator on the ruler's left edge using this color. Keep it
+    // transparent so no stray line shows up next to the scrollbar.
+    overviewRulerBorder: 'rgba(0, 0, 0, 0)',
   };
 }
 
@@ -75,6 +79,10 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
       fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
       theme: themeFor(accentRef.current),
       scrollback: 10000,
+      // xterm 6 renders its own (VS Code style) scrollbar, and that column's
+      // width comes from overviewRuler.width (14px when unset). Match the
+      // app's 8px scrollbars so the terminal bar does not stand out.
+      overviewRuler: { width: 8, showTopBorder: false, showBottomBorder: false },
       // ConPTY reprints wrapped lines differently from a generic VT host.
       // The build number is completed after StartSession returns.
       windowsPty: { backend: 'conpty' },
