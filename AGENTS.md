@@ -81,16 +81,19 @@ bin\PwshDeck.exe --mcp
 
 ### 4. 输出清理（只作用于 MCP，GUI 保留原始字节）
 
-`internal/mcp/tools.go`：
+`internal/ansi/ansi.go` 的 `Strip` 剥 CSI / OSC / 单字节 ESC 和游离控制字符（保留 `\t\r\n`）。`internal/mcp/tools.go`：
 
-- `cleanOutput`：剥 ANSI（CSI / OSC / 单字节 ESC）和游离控制字符，保留 `\t\r\n`。
+- `cleanOutput`：`ansi.Strip` 的薄封装，用于 `execute_command` / `read_output`。
+- `list_sessions` 的 `output_tail`：同样走 `ansi.Strip` 后把空白折叠成单空格，取最近输出的最后 10 个可见字符（`internal/session` 的 `outputBuffer.tailText`）。
 - `stripCommandEcho`：定位**完整命令字符串第一次出现**的位置，取其之后内容（再跳过尾部空格与换行）。原因：PSReadLine 对长命令会「分段回显 + 一次完整重绘」，完整命令只出现在最后一次重绘里；旧「首行匹配」做法剥不干净。
 - `stripTrailingPrompt`：正则 `\r?\n?PS [^\r\n]*?>\s*$` 剥掉尾部提示符。
 - `decodeInput`：把 `\r`/`\n`/`\t`/`\\`/`\uXXXX` 解码为原始字节，只用在 `send_input` 的 handler 里，**不要**加进 `WriteInput`——GUI 终端的 `onData` 走的是真按键，不需要解码。
 
 ### 5. MCP 工具与两种传输
 
-工具：`list_sessions` / `create_session` / `send_input` / `execute_command` / `read_output` / `stop_session` / `resize_session` / `list_windows`（`open_window` 已移除）。
+工具：`list_sessions` / `create_session` / `send_input` / `execute_command` / `read_output` / `stop_session` / `resize_session`（`open_window` 与 `list_windows` 已移除）。
+
+- 会话标题实时同步：前端在 tab 就绪与重命名时调用 `SessionManager.RenameSession`，`list_sessions` 返回该标题（不再固定为 `pwsh #N`）。
 
 - HTTP：`http://127.0.0.1:<port>/mcp`，随 GUI 启停，端口见 config（默认 21724，被占用时向上探测）。
 - stdio：`--mcp`。
@@ -108,6 +111,7 @@ bin\PwshDeck.exe --mcp
 - **Windows 专属**：ConPTY、`pwsh.exe`（不是 `powershell.exe`）、`-EncodedCommand` 为 UTF-16LE。二进制运行中可被覆盖（已观察），覆盖后需重启进程才加载新代码。
 - **`build/appicon.png` 等资源**：属构建资产，一般与业务改动无关，提交时勿夹带无关文件的改动。
 - **会话 ID**：4 字节随机，`StartSession` 里做了查重重试。
+- **xterm 6 滚动条**：xterm 6 自己绘制（VS Code 风格）滚动条，宽度由 `overviewRuler.width` 决定（未设置时 14px）；`.xterm-viewport` 的原生滚动条只是残留，不参与滚动，必须在 CSS 里隐藏，否则会出现两条宽度不一致的滚动条。启用 `overviewRuler` 还会让 xterm 在滚动条左侧画 1px 的 `overviewRulerBorder` 分隔线（默认是前景色，看起来像一条白线），主题里已把它设为透明。`Terminal.css` 里还有一条「有滚动内容时常显」的 hack（`.invisible.fade`），升级 xterm 大版本时要复核。
 
 ## 已知边界 / 有意未做
 
