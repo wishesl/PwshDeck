@@ -47,8 +47,8 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
   const sessionIdRef = useRef<string | null>(null);
   const [phase, setPhase] = useState<Phase>('starting');
   // Floating copy/paste menu shown while text is selected or on right-click.
-  // Ctrl+C is claimed by the shell (SIGINT), so this menu is the ergonomic
-  // copy/paste path.
+  // Ctrl+C copies when there is a selection (see the key handler below), so
+  // this menu remains the mouse-friendly path for paste and drag-less copies.
   const [selMenu, setSelMenu] = useState<{ x: number; y: number } | null>(null);
   const selMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -87,10 +87,59 @@ export default function Terminal({ accent = DEFAULT_ACCENT, initialDir = '', onR
     termRef.current = term;
     fitRef.current = fit;
 
+    let disposed = false;
+
+    // Ctrl+C copies when there is a selection (and is swallowed), otherwise it
+    // falls through so xterm writes 0x03 and the shell/REPL sees its usual
+    // interrupt (Windows-console behaviour). Ctrl+V / Ctrl+Shift+V paste from
+    // the native clipboard instead of sending 0x16: WebView2's browser paste
+    // event is unreliable here, and term.paste() keeps bracketed-paste and
+    // newline handling correct. xterm 6 has no detach API; the handler dies
+    // with the terminal instance.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true;
+      if (!event.ctrlKey || event.altKey || event.metaKey) return true;
+      const lower = event.key.toLowerCase();
+      // `code` keeps the shortcuts working on non-Latin layouts.
+      const isC = event.code === 'KeyC' || lower === 'c';
+      const isV = event.code === 'KeyV' || lower === 'v';
+
+      if (isC) {
+        const selection = term.hasSelection() ? term.getSelection() : '';
+        // Plain Ctrl+C with nothing selected stays a SIGINT; Ctrl+Shift+C is
+        // copy-only and is swallowed even when there is nothing to copy.
+        if (!selection && !event.shiftKey) return true;
+        event.preventDefault();
+        event.stopPropagation();
+        if (selection) {
+          Clipboard.SetText(selection).catch(() => {});
+          term.clearSelection();
+          setSelMenu(null);
+        }
+        return false;
+      }
+
+      if (isV) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelMenu(null);
+        term.clearSelection();
+        Clipboard.Text()
+          .then((text) => {
+            if (disposed) return;
+            if (text) term.paste(text);
+            term.focus();
+          })
+          .catch(() => {});
+        return false;
+      }
+
+      return true;
+    });
+
     // Wails calls are asynchronous. Keep one write in flight and merge pending
     // raw input, preserving byte order without creating one RPC per key-repeat
     // event.
-    let disposed = false;
     let inputInFlight = false;
     let pendingInput: { id: string; data: string } | null = null;
     const drainInput = () => {
