@@ -41,6 +41,15 @@ export function ReadOutput(id: string, since: number): $CancellablePromise<[stri
 }
 
 /**
+ * RenameSession updates a session's display title, so list_sessions shows the
+ * same tab name the user renamed in the UI. Titles are trimmed; an empty title
+ * is ignored (the UI never commits one) and keeps the previous name.
+ */
+export function RenameSession(id: string, title: string): $CancellablePromise<void> {
+    return $Call.ByID(551324190, id, title);
+}
+
+/**
  * Resize informs the ConPTY of the terminal's new dimensions so pwsh reflows
  * its layout. Called by the frontend whenever xterm.js is resized.
  */

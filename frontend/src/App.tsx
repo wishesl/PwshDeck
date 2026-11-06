@@ -9,6 +9,7 @@ import {
 } from 'dockview-react';
 import 'dockview-react/dist/styles/dockview.css';
 import { WindowManager } from '../bindings/pwshdeck/internal/window';
+import { SessionManager } from '../bindings/pwshdeck/internal/session';
 import McpPanel from './components/McpPanel';
 import SettingsPanel from './components/SettingsPanel/SettingsPanel';
 import TabMenu from './components/TabMenu';
@@ -79,6 +80,12 @@ export default function App() {
   const readyRef = useRef<(tabId: string, sessionId: string) => void>(() => {});
   readyRef.current = (tabId, sessionId) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, sessionId } : t)));
+    // Adopt the tab's (possibly restored or already renamed) title for the new
+    // session, so list_sessions shows the name the user sees.
+    const tab = tabsRef.current.find((t) => t.id === tabId);
+    if (tab?.title) {
+      SessionManager.RenameSession(sessionId, tab.title).catch(() => {});
+    }
   };
   const closeTabRef = useRef<(tabId: string) => void>(() => {});
   closeTabRef.current = (tabId) => {
@@ -113,6 +120,11 @@ export default function App() {
     setTabs(next);
     persistTabsRef.current(next);
     apiRef.current?.getPanel(tabId)?.api.setTitle(title);
+    // Keep the MCP-visible session title in sync with the renamed tab.
+    const sessionId = next.find((t) => t.id === tabId)?.sessionId;
+    if (sessionId) {
+      SessionManager.RenameSession(sessionId, title).catch(() => {});
+    }
   };
 
   const accentTabRef = useRef<(tabId: string, accent: string) => void>(() => {});

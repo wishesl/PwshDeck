@@ -10,15 +10,22 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/UserExistsError/conpty"
+
+	"pwshdeck/internal/ansi"
 )
 
 // outputBufLimit caps how many recent ConPTY output bytes are kept in memory
 // per session, so MCP clients can read output produced while they were away.
 const outputBufLimit = 512 * 1024
+
+// outputTailChars is how many trailing visible characters SessionInfo reports
+// as a quick "what is on screen now" preview for list_sessions.
+const outputTailChars = 10
 
 // TerminalSession is one pwsh process running inside a Windows ConPTY.
 type TerminalSession struct {
@@ -58,6 +65,10 @@ type SessionInfo struct {
 	Cols         int    `json:"cols"`
 	Rows         int    `json:"rows"`
 	Pwd          string `json:"pwd"`
+	// OutputTail is the last few visible characters of recent output, ANSI
+	// escapes stripped and whitespace collapsed, so list_sessions can show a
+	// one-line preview without transferring the whole buffer.
+	OutputTail   string `json:"output_tail"`
 	WindowsBuild int    `json:"windows_build"`
 }
 
@@ -74,6 +85,7 @@ func (s *TerminalSession) Info() SessionInfo {
 		Cols:         s.cols,
 		Rows:         s.rows,
 		Pwd:          s.Pwd,
+		OutputTail:   s.buf.tailText(outputTailChars),
 		WindowsBuild: hostWindowsBuild,
 	}
 }
@@ -260,6 +272,30 @@ func (o *outputBuffer) lastActivity() time.Time {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.lastWrite
+}
+
+// tailText returns the last n visible characters of recent output: ANSI escape
+// sequences are stripped and whitespace is collapsed so the preview fits on one
+// line. Only the tail of the buffer is scanned, keeping the cost constant no
+// matter how much scrollback accumulated.
+func (o *outputBuffer) tailText(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	o.mu.Lock()
+	tail := o.buf
+	if len(tail) > 4096 {
+		tail = tail[len(tail)-4096:]
+	}
+	raw := string(tail)
+	o.mu.Unlock()
+
+	text := strings.Join(strings.Fields(ansi.Strip(raw)), " ")
+	runes := []rune(text)
+	if len(runes) > n {
+		runes = runes[len(runes)-n:]
+	}
+	return string(runes)
 }
 
 // newSessionID returns a short random identifier usable as an MCP argument.

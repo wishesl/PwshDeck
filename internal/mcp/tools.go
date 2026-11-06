@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"pwshdeck/internal/ansi"
 	"pwshdeck/internal/session"
 	"pwshdeck/internal/window"
 )
@@ -17,26 +18,11 @@ import (
 // read_output, keeping the tail where fresh output lives.
 const mcpMaxToolOutput = 96 * 1024
 
-// ansiPattern matches ANSI/VT escape sequences in terminal output: CSI
-// (ESC [ ...), OSC (ESC ] ... up to BEL/ST) and single-byte ESC sequences.
-var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-~]`)
-
 // cleanOutput strips ANSI escape sequences and stray control characters from
 // terminal output, producing plain text for MCP tool results. The GUI stream
 // keeps the raw bytes; only what MCP clients read is cleaned.
 func cleanOutput(s string) string {
-	s = ansiPattern.ReplaceAllString(s, "")
-	return strings.Map(func(r rune) rune {
-		switch r {
-		case '\t', '\r', '\n':
-			return r
-		default:
-			if r < 0x20 || r == 0x7f {
-				return -1 // drop remaining control characters
-			}
-			return r
-		}
-	}, s)
+	return ansi.Strip(s)
 }
 
 // decodeInput expands the escape sequences send_input documents (\r, \n, \t,
@@ -140,14 +126,13 @@ func stripTrailingPrompt(output string) string {
 // pwshToolSet is the single source of truth for exposed tool names and
 // descriptions, used both at registration time and by the management UI.
 var pwshToolSet = []ToolInfo{
-	{Name: "list_sessions", Description: "List all pwsh terminal sessions with id, title, host window, size and running state."},
+	{Name: "list_sessions", Description: "List all pwsh terminal sessions with id, live title (reflects tab renames), host window, size, running state and the last 10 visible characters of recent output."},
 	{Name: "create_session", Description: "Start a new interactive pwsh session in a ConPTY. Optionally also open a GUI window for it."},
 	{Name: "send_input", Description: "Write raw keystrokes to a session's stdin. Use \\r for Enter; supports escape sequences and Ctrl+C (\\u0003). Output is not returned - use read_output."},
 	{Name: "execute_command", Description: "Run a PowerShell command in a session (Enter appended automatically) and wait for it to finish (the prompt returns) before returning the collected output (plain text, ANSI stripped; command echo and trailing prompt removed). The session stays interactive - use read_output with since_offset for anything produced later."},
 	{Name: "read_output", Description: "Read output buffered since a byte offset (offset 0 returns recent history) as plain text (ANSI stripped). Returns NextOffset to pass back for incremental reads."},
 	{Name: "stop_session", Description: "Terminate a pwsh session and its ConPTY, then remove it from the session list."},
 	{Name: "resize_session", Description: "Resize a session's pseudo terminal so pwsh reflows its output."},
-	{Name: "list_windows", Description: "List the application's terminal windows."},
 }
 
 // toolDesc looks up a tool description by name.
@@ -311,23 +296,6 @@ func BuildServer(pwsh *session.SessionManager, wins *window.WindowManager) (*mcp
 			return nil, okOut{OK: true}, nil
 		})
 
-	// ---- list_windows --------------------------------------------------
-	mcp.AddTool(srv,
-		&mcp.Tool{
-			Name:        "list_windows",
-			Description: toolDesc("list_windows"),
-		},
-		func(ctx context.Context, req *mcp.CallToolRequest, in listWindowsIn) (*mcp.CallToolResult, windowListOut, error) {
-			var out windowListOut
-			if wins != nil {
-				out.Windows = wins.ListWindows()
-			}
-			if out.Windows == nil {
-				out.Windows = []window.WindowInfo{}
-			}
-			return nil, out, nil
-		})
-
 	// The exposed tool list for the management UI.
 	return srv, append([]ToolInfo(nil), pwshToolSet...)
 }
@@ -424,10 +392,4 @@ type resizeIn struct {
 	SessionID string `json:"session_id" jsonschema:"Target session id from list_sessions."`
 	Cols      int    `json:"cols" jsonschema:"Terminal width in columns (>=1)."`
 	Rows      int    `json:"rows" jsonschema:"Terminal height in rows (>=1)."`
-}
-
-type listWindowsIn struct{}
-
-type windowListOut struct {
-	Windows []window.WindowInfo `json:"windows"`
 }

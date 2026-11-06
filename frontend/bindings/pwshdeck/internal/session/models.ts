@@ -14,5 +14,12 @@ export interface SessionInfo {
     "cols": number;
     "rows": number;
     "pwd": string;
+
+    /**
+     * OutputTail is the last few visible characters of recent output, ANSI
+     * escapes stripped and whitespace collapsed, so list_sessions can show a
+     * one-line preview without transferring the whole buffer.
+     */
+    "output_tail": string;
     "windows_build": number;
 }

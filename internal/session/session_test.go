@@ -71,6 +71,76 @@ func TestConsumeCwdReport(t *testing.T) {
 	})
 }
 
+func TestOutputTail(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{name: "empty output", out: "", want: ""},
+		{name: "keeps the last ten characters", out: "0123456789abcdef", want: "6789abcdef"},
+		{name: "ANSI stripped", out: "\x1b[31mhello world\x1b[0m\r\nPS C:\\dir> ", want: "PS C:\\dir>"},
+		{name: "whitespace collapsed onto one line", out: "a\r\nb\tc   ", want: "a b c"},
+		{name: "multibyte runes counted, not bytes", out: "一二三四五六七八九十十一", want: "三四五六七八九十十一"},
+		{name: "ANSI-only output is empty", out: "\x1b[2J\x1b[H", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sess := &TerminalSession{}
+			sess.buf.write([]byte(tt.out))
+			if got := sess.Info().OutputTail; got != tt.want {
+				t.Errorf("OutputTail for %q = %q, want %q", tt.out, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenameSession(t *testing.T) {
+	mgr := NewSessionManager(0, 0)
+	sess := &TerminalSession{ID: "abcd", Title: "pwsh #1"}
+	mgr.sessions["abcd"] = sess
+
+	if err := mgr.RenameSession("abcd", "  后端  "); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if got := sess.Info().Title; got != "后端" {
+		t.Errorf("title after rename = %q, want %q", got, "后端")
+	}
+
+	// An empty title is a no-op rather than an error: the UI never commits one.
+	if err := mgr.RenameSession("abcd", "   "); err != nil {
+		t.Fatalf("rename to blank: %v", err)
+	}
+	if got := sess.Info().Title; got != "后端" {
+		t.Errorf("title after blank rename = %q, want %q", got, "后端")
+	}
+
+	if err := mgr.RenameSession("missing", "x"); err == nil {
+		t.Error("renaming an unknown session should fail")
+	}
+}
+
+func TestListSessionsReportsLiveTitleAndTail(t *testing.T) {
+	mgr := NewSessionManager(0, 0)
+	sess := &TerminalSession{ID: "abcd", Title: "pwsh #1", running: true}
+	sess.buf.write([]byte("\x1b[32mbuild ok\x1b[0m\r\nPS C:\\work> "))
+	mgr.sessions["abcd"] = sess
+
+	if err := mgr.RenameSession("abcd", "后端"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	infos := mgr.ListSessions()
+	if len(infos) != 1 {
+		t.Fatalf("ListSessions returned %d sessions, want 1", len(infos))
+	}
+	if infos[0].Title != "后端" {
+		t.Errorf("title = %q, want %q", infos[0].Title, "后端")
+	}
+	if want := "S C:\\work>"; infos[0].OutputTail != want {
+		t.Errorf("output_tail = %q, want %q", infos[0].OutputTail, want)
+	}
+}
+
 func TestEncodeCommand(t *testing.T) {
 	enc := encodeCommand("function global:prompt { }\n")
 	raw, err := base64.StdEncoding.DecodeString(enc)

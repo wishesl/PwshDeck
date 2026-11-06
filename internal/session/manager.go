@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf16"
@@ -288,10 +289,29 @@ func (s *SessionManager) ListSessions() []SessionInfo {
 	return infos
 }
 
+// RenameSession updates a session's display title, so list_sessions shows the
+// same tab name the user renamed in the UI. Titles are trimmed; an empty title
+// is ignored (the UI never commits one) and keeps the previous name.
+func (s *SessionManager) RenameSession(id, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil
+	}
+	s.mu.Lock()
+	sess, ok := s.sessions[id]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("unknown session %q", id)
+	}
+	sess.mu.Lock()
+	sess.Title = title
+	sess.mu.Unlock()
+	return nil
+}
+
 // ReadOutput returns output buffered since the given byte offset. Use the
 // returned NextOffset for follow-up calls; offset 0 returns recent history.
-func (s *SessionManager) ReadOutput(id string, since int64) ([]byte, int64, bool, error) {
-	sess := s.getSession(id)
+func (s *SessionManager) ReadOutput(id string, since int64) ([]byte, int64, bool, error) {	sess := s.getSession(id)
 	data, next, dropped := sess.buf.since(since)
 	return data, next, dropped, nil
 }
